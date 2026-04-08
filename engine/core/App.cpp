@@ -1,26 +1,36 @@
 #include "App.h"
 #include <iostream>
-#include <core/utils/Logger.h>
-
-App::App(int width, int height, const std::string& title)
-    : m_Window(width, height, title),
-    m_Renderer(m_Window)
-{
-    m_Renderer.Init();
-}
-
-App::~App() = default;
+#include <utils/Logger.h>
 
 void App::Run()
 {
-    while (!m_Window.ShouldClose())
+    Init();
+    MainLoop();
+    Shutdown();
+}
+
+void App::Init()
+{
+    m_window.Init(800, 600, "XVEngine");
+    m_renderer.Init(m_window);
+
+    Logger::Info("Appl Initialized");
+}
+
+void App::MainLoop()
+{
+    while (!m_window.ShouldClose())
     {
-        m_Window.PollEvents();
-
-        m_Renderer.DrawFrame();
+        m_window.PollEvents();
+        m_renderer.BeginFrame();
+        m_renderer.EndFrame();
     }
+}
 
-    m_Renderer.Cleanup();
+void App::Shutdown()
+{
+    m_renderer.Shutdown();
+    m_window.Shutdown();
 
-    Logger::Info("App closed!");
+    Logger::Info("Appl Shutdown");
 }

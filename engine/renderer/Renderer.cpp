@@ -1,24 +1,49 @@
-#include "renderer/Renderer.h"
-#include "core/utils/Logger.h"
+#include "Renderer.h"
+#include "utils/Logger.h"
+#include <stdexcept>
 
-Renderer::Renderer(Window& window)
-    : m_Window(window)
+void Renderer::Init(Window& window)
 {
-}
+    m_window = &window;
 
-Renderer::~Renderer() = default;
+    m_instance.Init();
+    CreateSurface();
+    m_device.Init(m_instance, m_surface, m_preferredGPUType);
+    m_swapchain.Init(m_device, m_surface, *m_window);
+    m_commandManager.Init(m_device, m_swapchain);
+    
 
-void Renderer::Init()
-{
+
+    m_initialized = true;
     Logger::Info("Renderer initialized");
 }
 
-void Renderer::DrawFrame()
+void Renderer::CreateSurface()
 {
-    //TODO: vulkan logic
+    VkSurfaceKHR surface;
+    if (glfwCreateWindowSurface(*m_instance.GetInstance(), m_window->GetHandle(), nullptr, &surface) != VK_SUCCESS)
+        throw std::runtime_error("Failed to create window surface!");
+
+    m_surface = vk::raii::SurfaceKHR(m_instance.GetInstance(), surface);
+    Logger::Info("Window surface created");
 }
 
-void Renderer::Cleanup()
+void Renderer::BeginFrame()
 {
-    Logger::Info("Renderer cleaned up");
+    // TODO
+}
+
+void Renderer::EndFrame()
+{
+    // TODO
+}
+
+void Renderer::Shutdown()
+{
+    if (!m_initialized)
+        return;
+
+    m_device.GetDevice().waitIdle();
+    m_initialized = false;
+    Logger::Info("Renderer shutdown");
 }

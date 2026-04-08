@@ -1,37 +1,37 @@
 #include "Window.h"
 #include <stdexcept>
+#include <iostream>
+#include <utils/Logger.h>
 
-
-
-Window::Window(int width, int height, const std::string& title)
+void Window::Init(uint32_t width, uint32_t height, const std::string& title)
 {
+    m_width = width;
+    m_height = height;
+    m_title = title;
+
     if (!glfwInit())
         throw std::runtime_error("Failed to initialize GLFW");
 
-    //TODO: empty for now. need to add vulkanapi
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-    m_Window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
-    if (!m_Window)
+    m_window = glfwCreateWindow(m_width, m_height, m_title.c_str(), nullptr, nullptr);
+    if (!m_window)
         throw std::runtime_error("Failed to create GLFW window");
 
-    
+    Logger::Info("Window initialized: ",m_width, "x", m_height," - ", m_title);
 }
 
-Window::~Window()
+void Window::Shutdown()
 {
-    if (m_Window)
-        glfwDestroyWindow(m_Window);
-
+    if (m_window)
+    {
+        glfwDestroyWindow(m_window);
+        m_window = nullptr;
+    }
     glfwTerminate();
+    Logger::Info("Window shutdown");
 }
 
-void Window::PollEvents()
-{
-    glfwPollEvents();
-}
-
-bool Window::ShouldClose() const
-{
-    return glfwWindowShouldClose(m_Window);
-}
+bool Window::ShouldClose() const { return glfwWindowShouldClose(m_window); }
+void Window::PollEvents()  const { glfwPollEvents(); }

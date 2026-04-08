@@ -1,6 +1,7 @@
 #include "engine/core/App.h"
-#include <iostream>
-#include<core/utils/Logger.h>
+#include<utils/Logger.h>
+#include <cstdlib>
+#include <exception>
 
 int main()
 {
