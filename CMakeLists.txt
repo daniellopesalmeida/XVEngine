@@ -25,6 +25,34 @@ FetchContent_MakeAvailable(glm)
 # Vulkan
 find_package(Vulkan REQUIRED)
 
+# Slang compiler (in vulkan directory)
+find_program(SLANGC slangc HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin")
+if(NOT SLANGC)
+    message(FATAL_ERROR "slangc not found - make sure VULKAN_SDK is set")
+endif()
+message(STATUS "Found slangc: ${SLANGC}")
+
+# Shader compilation
+file(GLOB_RECURSE SLANG_SOURCES "${CMAKE_SOURCE_DIR}/shaders/*.slang")
+
+foreach(SLANG ${SLANG_SOURCES})
+    get_filename_component(FILE_NAME ${SLANG} NAME_WE)
+    set(SPV_VERT "${CMAKE_BINARY_DIR}/shaders/${FILE_NAME}.vert.spv")
+    set(SPV_FRAG "${CMAKE_BINARY_DIR}/shaders/${FILE_NAME}.frag.spv")
+
+    add_custom_command(
+        OUTPUT  ${SPV_VERT} ${SPV_FRAG}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+        COMMAND ${SLANGC} ${SLANG} -target spirv -emit-spirv-directly -entry vertMain -o ${SPV_VERT}
+        COMMAND ${SLANGC} ${SLANG} -target spirv -emit-spirv-directly -entry fragMain -o ${SPV_FRAG}
+        DEPENDS ${SLANG}
+        COMMENT "Compiling shader: ${FILE_NAME}.slang"
+    )
+    list(APPEND SPV_FILES ${SPV_VERT} ${SPV_FRAG})
+endforeach()
+
+add_custom_target(Shaders ALL DEPENDS ${SPV_FILES})
+
 # source and header collection
 file(GLOB_RECURSE SOURCES
     "main.cpp"
@@ -36,6 +64,7 @@ file(GLOB_RECURSE HEADERS
 )
 
 add_executable(XVEngine ${SOURCES} ${HEADERS})
+add_dependencies(XVEngine Shaders)
 
 target_include_directories(XVEngine PRIVATE
     ${CMAKE_SOURCE_DIR}          # #include for main.cpp
@@ -47,6 +76,14 @@ target_link_libraries(XVEngine PRIVATE
     glfw
     glm::glm
     Vulkan::Vulkan
+)
+
+ #Copy shaders to output directory after build
+add_custom_command(TARGET XVEngine POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_BINARY_DIR}/shaders"
+        "$<TARGET_FILE_DIR:XVEngine>/shaders"
+    COMMENT "Copying shaders to output directory"
 )
 
 if(MSVC)

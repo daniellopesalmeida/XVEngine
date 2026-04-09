@@ -22,7 +22,12 @@ void App::MainLoop()
     while (!m_window.ShouldClose())
     {
         m_window.PollEvents();
-        m_renderer.BeginFrame();
+        if (!m_renderer.BeginFrame())
+        {
+            Logger::Warn("Renderer.BeginFrame retrns false!");
+            continue;
+        }
+        m_renderer.DrawFrame();
         m_renderer.EndFrame();
     }
 }

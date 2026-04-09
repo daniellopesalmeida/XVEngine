@@ -12,7 +12,8 @@ void Renderer::Init(Window& window)
     m_swapchain.Init(m_device, m_surface, *m_window);
     m_commandManager.Init(m_device, m_swapchain);
     
-
+    CreateDepthImage();
+    CreatePipeline();
 
     m_initialized = true;
     Logger::Info("Renderer initialized");
@@ -27,15 +28,201 @@ void Renderer::CreateSurface()
     m_surface = vk::raii::SurfaceKHR(m_instance.GetInstance(), surface);
     Logger::Info("Window surface created");
 }
-
-void Renderer::BeginFrame()
+void Renderer::CreateDepthImage()
 {
-    // TODO
+    ImageConfig config;
+    config.width = m_swapchain.GetExtent().width;
+    config.height = m_swapchain.GetExtent().height;
+    config.format = vk::Format::eD32Sfloat;
+    config.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment;
+    config.aspectMask = vk::ImageAspectFlagBits::eDepth;
+    //config.samples = m_device.GetMsaaSamples();
+    config.samples = vk::SampleCountFlagBits::e1;  // no MSAA
+
+    m_depthImage.Init(m_device, m_commandManager, config);
+    // Transition to the layout
+    m_depthImage.TransitionLayout(m_device, m_commandManager,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eDepthAttachmentOptimal);
+}
+
+void Renderer::CreatePipeline()
+{
+    PipelineConfig config;
+    config.vertShaderPath = "shaders/shader.vert.spv";
+    config.fragShaderPath = "shaders/shader.frag.spv";
+    config.colorAttachmentFormats = { m_swapchain.GetSurfaceFormat().format };
+    config.depthAttachmentFormat = vk::Format::eD32Sfloat;
+    //config.msaaSamples = m_device.GetMsaaSamples();
+    config.msaaSamples = vk::SampleCountFlagBits::e1;  // no MSAA
+
+    m_pipeline.Init(m_device, config);
+}
+
+bool Renderer::BeginFrame()
+{
+    auto& fence = m_commandManager.GetInFlightFence(m_currentFrame);
+    auto& cmd = m_commandManager.GetCommandBuffer(m_currentFrame);
+
+    // Wait for this frame slot to be free
+    if (m_device.GetDevice().waitForFences(*fence, true,
+        std::numeric_limits<uint64_t>::max()) != vk::Result::eSuccess)
+        throw std::runtime_error("waitForFences failed");
+
+    // Acquire swapchain image
+    auto [result, imageIndex] = m_swapchain.GetSwapchain().acquireNextImage(
+        std::numeric_limits<uint64_t>::max(),
+        *m_commandManager.GetPresentCompleteSemaphore(m_currentFrame),
+        nullptr);
+
+    if (result == vk::Result::eErrorOutOfDateKHR)
+    {
+        // TODO: handle resize
+        return false;
+    }
+
+    m_imageIndex = imageIndex;
+    m_device.GetDevice().resetFences(*fence);
+
+    // Begin command buffer
+    cmd.reset();
+    vk::CommandBufferBeginInfo beginInfo;
+    beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+    cmd.begin(beginInfo);
+
+    //tarnsition swapchain image-color attach
+    vk::ImageMemoryBarrier2 barrier;
+    barrier.image = m_swapchain.GetImages()[m_imageIndex];
+    barrier.oldLayout = vk::ImageLayout::eUndefined;
+    barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    barrier.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
+    barrier.srcAccessMask = vk::AccessFlagBits2::eNone;
+    barrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+    barrier.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
+    barrier.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
+    barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+    barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
+
+    vk::DependencyInfo depInfo;
+    depInfo.imageMemoryBarrierCount = 1;
+    depInfo.pImageMemoryBarriers = &barrier;
+    cmd.pipelineBarrier2(depInfo);
+
+    //dynamic rendering
+    vk::RenderingAttachmentInfo colorAttachment;
+    colorAttachment.imageView = *m_swapchain.GetImageViews()[m_imageIndex];
+    colorAttachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    colorAttachment.loadOp = vk::AttachmentLoadOp::eClear;
+    colorAttachment.storeOp = vk::AttachmentStoreOp::eStore;
+    colorAttachment.clearValue = vk::ClearColorValue{ 0.1f, 0.1f, 0.1f, 1.0f };
+
+    vk::RenderingAttachmentInfo depthAttachment;
+    depthAttachment.imageView = m_depthImage.GetImageView();
+    depthAttachment.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
+    depthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
+    depthAttachment.storeOp = vk::AttachmentStoreOp::eDontCare;
+    depthAttachment.clearValue = vk::ClearDepthStencilValue{ 1.0f, 0 };
+
+    vk::RenderingInfo renderingInfo;
+    renderingInfo.renderArea = vk::Rect2D{ {0, 0}, m_swapchain.GetExtent() };
+    renderingInfo.layerCount = 1;
+    renderingInfo.colorAttachmentCount = 1;
+    renderingInfo.pColorAttachments = &colorAttachment;
+    renderingInfo.pDepthAttachment = &depthAttachment;
+
+    cmd.beginRendering(renderingInfo);
+    //Logger::Info("BeginFrame: imageIndex=", m_imageIndex, " frame=", m_currentFrame);
+
+    //bind pipeline and set dynamic viewport/scissor
+    m_pipeline.Bind(cmd);
+
+    vk::Viewport viewport;
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(m_swapchain.GetExtent().width);
+    viewport.height = static_cast<float>(m_swapchain.GetExtent().height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    cmd.setViewport(0, viewport);
+
+    vk::Rect2D scissor{ {0, 0}, m_swapchain.GetExtent() };
+    cmd.setScissor(0, scissor);
+
+    return true;
 }
 
 void Renderer::EndFrame()
 {
-    // TODO
+    auto& cmd = m_commandManager.GetCommandBuffer(m_currentFrame);
+    auto& fence = m_commandManager.GetInFlightFence(m_currentFrame);
+
+    cmd.endRendering();
+
+    //transition swapchain image-present
+    vk::ImageMemoryBarrier2 barrier;
+    barrier.image = m_swapchain.GetImages()[m_imageIndex];
+    barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    barrier.newLayout = vk::ImageLayout::ePresentSrcKHR;
+    barrier.srcStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+    barrier.srcAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
+    barrier.dstStageMask = vk::PipelineStageFlagBits2::eBottomOfPipe;
+    barrier.dstAccessMask = vk::AccessFlagBits2::eNone;
+    barrier.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
+    barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+    barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
+
+    vk::DependencyInfo depInfo;
+    depInfo.imageMemoryBarrierCount = 1;
+    depInfo.pImageMemoryBarriers = &barrier;
+    cmd.pipelineBarrier2(depInfo);
+
+    //Logger::Info("EndFrame: submitting");
+    cmd.end();
+
+    // Submit
+    vk::SemaphoreSubmitInfo waitSemInfo;
+    waitSemInfo.semaphore = *m_commandManager.GetPresentCompleteSemaphore(m_currentFrame);
+    waitSemInfo.stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+
+    vk::SemaphoreSubmitInfo signalSemInfo;
+    signalSemInfo.semaphore = *m_commandManager.GetRenderFinishedSemaphore(m_imageIndex);
+    signalSemInfo.stageMask = vk::PipelineStageFlagBits2::eAllGraphics;
+
+    vk::CommandBufferSubmitInfo cmdInfo;
+    cmdInfo.commandBuffer = *cmd;
+
+    vk::SubmitInfo2 submitInfo;
+    submitInfo.waitSemaphoreInfoCount = 1;
+    submitInfo.pWaitSemaphoreInfos = &waitSemInfo;
+    submitInfo.signalSemaphoreInfoCount = 1;
+    submitInfo.pSignalSemaphoreInfos = &signalSemInfo;
+    submitInfo.commandBufferInfoCount = 1;
+    submitInfo.pCommandBufferInfos = &cmdInfo;
+
+    m_device.GetQueue().submit2(submitInfo, *fence);
+
+    //present
+    vk::PresentInfoKHR presentInfo;
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = &*m_commandManager.GetRenderFinishedSemaphore(m_imageIndex);
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = &*m_swapchain.GetSwapchain();
+    presentInfo.pImageIndices = &m_imageIndex;
+
+    auto result = m_device.GetQueue().presentKHR(presentInfo);
+    if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
+    {
+        // TODO: handle resize
+    }
+
+    m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+void Renderer::DrawFrame()
+{
+    //Logger::Info("Drawing 3 vertices");
+    auto& cmd = m_commandManager.GetCommandBuffer(m_currentFrame);
+    cmd.draw(3, 1, 0, 0);  //3 vertices, hardcoded in shader
 }
 
 void Renderer::Shutdown()
@@ -44,6 +231,10 @@ void Renderer::Shutdown()
         return;
 
     m_device.GetDevice().waitIdle();
+    m_pipeline.Shutdown();
+    m_depthImage.Shutdown();
+    m_commandManager.Shutdown();
+    m_swapchain.Shutdown();
     m_initialized = false;
     Logger::Info("Renderer shutdown");
 }
