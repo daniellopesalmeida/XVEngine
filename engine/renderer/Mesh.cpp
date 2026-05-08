@@ -1,8 +1,8 @@
 #include "Mesh.h"
 #include "utils/Logger.h"
 
-void Mesh::Init(Device& device, CommandManager& cmdManager,const std::vector<Vertex>& vertices,
-    const std::vector<uint16_t>& indices)
+void Mesh::Init(Device& device, CommandManager& cmdManager, const std::vector<Vertex>& vertices,
+    const std::vector<uint32_t>& indices)
 {
     m_indexCount = static_cast<uint32_t>(indices.size());
 
@@ -13,7 +13,7 @@ void Mesh::Init(Device& device, CommandManager& cmdManager,const std::vector<Ver
 
     m_indexBuffer = Buffer::CreateWithData(
         device, cmdManager,
-        indices.data(), sizeof(uint16_t) * indices.size(),
+        indices.data(), sizeof(uint32_t) * indices.size(),
         vk::BufferUsageFlagBits::eIndexBuffer);
 
     Logger::Info("Mesh created: ", vertices.size(), " verts, ", m_indexCount, " indices");

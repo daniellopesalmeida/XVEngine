@@ -1,13 +1,17 @@
 struct VertexInput
 {
-    float3 position : POSITION;
-    float3 color    : COLOR;
+    float3 position : POSITION;  //location 0
+    float3 color    : COLOR;     //location 1
+    float3 normal   : NORMAL;    //location 2
+    float2 texCoord : TEXCOORD;  //location 3
 };
 
 struct VertexOutput
 {
     float4 position : SV_Position;
     float3 color    : COLOR;
+    float3 normal   : NORMAL;
+    float2 texCoord : TEXCOORD;
 };
 
 struct ObjectData
@@ -22,11 +26,10 @@ ConstantBuffer<ObjectData> objectData;
 VertexOutput vertMain(VertexInput input)
 {
     VertexOutput output;
-
     output.position = mul(objectData.mvp, float4(input.position, 1.0));
-
-    output.color = input.color;
-
+    output.color    = input.color;
+    output.normal   = input.normal;
+    output.texCoord = input.texCoord;
     return output;
 }
 
@@ -34,5 +37,4 @@ VertexOutput vertMain(VertexInput input)
 float4 fragMain(VertexOutput input) : SV_Target
 {
     return float4(input.color, 1.0);
-    //return float4(1,0,0,1);
 }

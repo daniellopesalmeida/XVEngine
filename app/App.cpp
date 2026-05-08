@@ -16,22 +16,33 @@ void App::Load()
     auto* scene = sm.AddScene("render scene");
 
     //loadQuad(scene);
-    loadCube(scene);
+    //loadCube(scene);
+    loadObj(scene);
+
 
     sm.LoadScene("render scene");
     Logger::Info("Scene loaded");
-    auto& obj = scene->GetObject(m_objectHandle);
-    Logger::Info("Position: {}", obj.transform.position.x);
+    
 }
 
 void App::Update(float deltaTime)
 {
     auto* scene = m_engine.GetSceneManager().GetActiveScene();
-    if (!scene) return;
+    if (!scene || m_Objects.empty()) return;
+
 
     //rotate
-    scene->GetObject(m_objectHandle).transform.rotation.y += 45.f * deltaTime;
-    scene->GetObject(m_objectHandle).transform.rotation.x += 20.f * deltaTime;
+    //scene->GetObject(m_Objects["vehicle"]).transform.rotation.y += 45.f * deltaTime;
+    //scene->GetObject(m_Objects["fire"]).transform.rotation.y += 45.f * deltaTime;
+    for (auto& [name, handle] : m_Objects)
+    {
+        auto& obj = scene->GetObject(handle);
+
+        obj.transform.rotation.y += 45.f * deltaTime;
+        //obj.transform.rotation.x += 20.f * deltaTime;
+    }
+
+
 }
 
 void App::FixedUpdate(float deltaTime)
@@ -80,7 +91,7 @@ void App::loadCube(Scene* scene)
         {{-0.5f, -0.5f,  0.5f}, {0,1,1}},
     };
 
-    const std::vector<uint16_t> indices =
+    const std::vector<uint32_t> indices =
     {
         0,1,2, 2,3,0,        // front
         4,5,6, 6,7,4,        // back
@@ -90,12 +101,20 @@ void App::loadCube(Scene* scene)
         20,21,22, 22,23,20   // bottom
     };
 
-    m_objectHandle = scene->AddObject(
+    m_Objects["cube"] = scene->AddObject(
         verts,
         indices,
         Transform{ .position = { 0.f, 0.f, 0.f } },
         "cube"
     );
+}
+
+void App::loadObj(Scene* scene)
+{
+    scene->LoadMesh("models/vehicle.obj", "vehicle");
+    scene->LoadMesh("models/fireFX.obj", "fire");
+    m_Objects["vehicle"] = scene->AddObject("vehicle", Transform{ .position = { 0.f, 0.f, -50.f } });
+    m_Objects["fire"] = scene->AddObject("fire", Transform{ .position = { 0.f, 0.f, -50.f } });
 }
 
 void App::loadQuad(Scene* scene)
@@ -106,7 +125,7 @@ void App::loadQuad(Scene* scene)
         {{  0.5f,  0.5f, 0.f }, { 0.f, 0.f, 1.f }},
         {{ -0.5f,  0.5f, 0.f }, { 1.f, 1.f, 0.f }},
     };
-    const std::vector<uint16_t> indices = { 0, 1, 2, 2, 3, 0 };
+    const std::vector<uint32_t> indices = { 0, 1, 2, 2, 3, 0 };
 
-    m_objectHandle = scene->AddObject(verts, indices, Transform{ .position = { 0.f, 0.f, 0.f } }, "quad");
+    m_Objects["quad"] = scene->AddObject(verts, indices, Transform{.position = {0.f, 0.f, 0.f}}, "quad");
 }

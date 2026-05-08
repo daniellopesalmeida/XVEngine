@@ -22,6 +22,7 @@ void Window::Init(uint32_t width, uint32_t height, const std::string& title)
     glfwSetKeyCallback(m_window, KeyCallback);
     glfwSetCursorPosCallback(m_window, CursorCallback);
     glfwSetMouseButtonCallback(m_window, MouseButtonCallback);
+    glfwSetFramebufferSizeCallback(m_window, FramebufferSizeCallback);
 
     Logger::Info("Window initialized: ", m_width, "x", m_height, " - ", m_title);
 }
@@ -38,7 +39,7 @@ void Window::Shutdown()
 }
 
 bool Window::ShouldClose() const { return glfwWindowShouldClose(m_window); }
-void Window::PollEvents() const { glfwPollEvents(); }
+void Window::PollEvents()  const { glfwPollEvents(); }
 
 void Window::KeyCallback(GLFWwindow* w, int key, int, int action, int)
 {
@@ -66,4 +67,13 @@ void Window::MouseButtonCallback(GLFWwindow* w, int button, int action, int)
 {
     auto* self = static_cast<Window*>(glfwGetWindowUserPointer(w));
     if (self->m_mouseButtonCb) self->m_mouseButtonCb(button, action);
+}
+
+void Window::FramebufferSizeCallback(GLFWwindow* w, int width, int height)
+{
+    auto* self = static_cast<Window*>(glfwGetWindowUserPointer(w));
+    self->m_width = static_cast<uint32_t>(width);
+    self->m_height = static_cast<uint32_t>(height);
+    self->m_resized = true;
+    if (self->m_resizeCb) self->m_resizeCb(self->m_width, self->m_height);
 }

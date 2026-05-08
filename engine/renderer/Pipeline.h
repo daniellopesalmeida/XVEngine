@@ -19,7 +19,7 @@ struct PipelineConfig
     //rasterization
     vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
     vk::CullModeFlags       cullMode = vk::CullModeFlagBits::eBack; //no culling
-    vk::FrontFace           frontFace = vk::FrontFace::eClockwise;
+    vk::FrontFace           frontFace = vk::FrontFace::eCounterClockwise;
     bool                    depthTest = true;
     bool                    depthWrite = true;
     bool                    blendEnable = false;

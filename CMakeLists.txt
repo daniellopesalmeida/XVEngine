@@ -22,6 +22,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(glm)
 
+# tinyobjloader
+FetchContent_Declare(
+    tinyobjloader
+    GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader.git
+    GIT_TAG v2.0.0rc13
+)
+FetchContent_MakeAvailable(tinyobjloader)
+
 # Vulkan
 find_package(Vulkan REQUIRED)
 
@@ -80,12 +88,14 @@ target_include_directories(XVEngine PRIVATE
     ${CMAKE_SOURCE_DIR}/engine
     ${CMAKE_SOURCE_DIR}/app
     ${Vulkan_INCLUDE_DIRS}
+    ${tinyobjloader_SOURCE_DIR}
 )
 
 target_link_libraries(XVEngine PRIVATE
     glfw
     glm::glm
     Vulkan::Vulkan
+    tinyobjloader
 )
 
  #Copy shaders to output directory after build
@@ -95,6 +105,16 @@ add_custom_command(TARGET XVEngine POST_BUILD
         "$<TARGET_FILE_DIR:XVEngine>/shaders"
     COMMENT "Copying shaders to output directory"
 )
+
+# Copy models/ to output directory (only if the folder exists)
+if(EXISTS "${CMAKE_SOURCE_DIR}/models")
+    add_custom_command(TARGET XVEngine POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/models"
+            "$<TARGET_FILE_DIR:XVEngine>/models"
+        COMMENT "Copying models to output directory"
+    )
+endif()
 
 if(MSVC)
     target_compile_options(XVEngine PRIVATE

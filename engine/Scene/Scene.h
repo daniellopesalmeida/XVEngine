@@ -11,6 +11,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <filesystem>
 #include <core/Transform.h>
 
 class Scene
@@ -22,14 +23,16 @@ public:
     //add an object from raw geometry
     ObjectHandle AddObject(
         const std::vector<Vertex>& vertices,
-        const std::vector<uint16_t>& indices,
+        const std::vector<uint32_t>& indices,
         const Transform& transform = {},
         const std::string& name = "");
 
-    // Add an object reusing an already-added mesh by name
-    ObjectHandle AddObject(
-        const std::string& meshName,
-        const Transform& transform = {});
+    //add an object reusing an already-added mesh by name
+    ObjectHandle AddObject(const std::string& meshName,const Transform& transform = {});
+
+    //load a mesh from an .obj file and register it under 'name'
+    //use AddObject(name, transform) to place instances
+    void LoadMesh(const std::filesystem::path& path, const std::string& name);
 
     void RemoveObject(ObjectHandle handle);
 
@@ -64,6 +67,6 @@ private:
 
     Mesh* GetOrCreateMesh(
         const std::vector<Vertex>& vertices,
-        const std::vector<uint16_t>& indices,
+        const std::vector<uint32_t>& indices,
         const std::string& name);
 };

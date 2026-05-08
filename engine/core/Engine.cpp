@@ -6,7 +6,7 @@
 
 void Engine::Init()
 {
-    m_window.Init(1280,720, "XVEngine");
+    m_window.Init(800, 600, "XVEngine");
     m_renderer.Init(m_window);
     m_sceneManager.Init(m_renderer.GetDevice(), m_renderer.GetCommandManager());
     RegisterWindowCallbacks();
@@ -15,7 +15,7 @@ void Engine::Init()
 
 void Engine::Run(const std::function<void()>& load)
 {
-    load();  //Game::Load() — scene setup before first frame
+    load();  // Game::Load() — scene setup before first frame
 
     constexpr float fixedTimestep = 1.f / 60.f;
     constexpr int   targetFps = 60;
@@ -91,5 +91,15 @@ void Engine::RegisterWindowCallbacks()
         {
             if (auto* scene = m_sceneManager.GetActiveScene())
                 scene->GetCamera().OnMouseButton(button, action);
+        });
+
+    m_window.SetResizeCallback([this](uint32_t width, uint32_t height)
+        {
+            if (height == 0) return;  //guard divideby zero when minimised
+            float aspect = static_cast<float>(width) / static_cast<float>(height);
+            if (auto* scene = m_sceneManager.GetActiveScene())
+            {
+                scene->GetCamera().SetAspect(aspect);
+            }
         });
 }

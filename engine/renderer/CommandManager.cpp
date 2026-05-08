@@ -1,6 +1,7 @@
 #include "CommandManager.h"
 #include "utils/Logger.h"
 #include <stdexcept>
+#include <limits>
 
 void CommandManager::Init(Device& device, Swapchain& swapchain)
 {
@@ -16,10 +17,25 @@ void CommandManager::Shutdown()
     // vk::raii handles cleanup
 }
 
+void CommandManager::RecreateSyncObjects(Device& device, Swapchain& swapchain)
+{
+    //wait for all fences before destroying existing sync objects
+    for (auto& fence : m_inFlightFences)
+    {
+        if (*fence != VK_NULL_HANDLE)
+        {
+            (void)device.GetDevice().waitForFences(*fence, true, std::numeric_limits<uint64_t>::max());
+        }
+    }
+
+    CreateSyncObjects(device, swapchain);
+    Logger::Info("Sync objects recreated");
+}
+
 void CommandManager::CreateCommandPool(Device& device)
 {
     vk::CommandPoolCreateInfo poolInfo;
-    poolInfo.flags            = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
+    poolInfo.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
     poolInfo.queueFamilyIndex = device.GetQueueIndex();
 
     m_commandPool = vk::raii::CommandPool(device.GetDevice(), poolInfo);
@@ -29,8 +45,8 @@ void CommandManager::CreateCommandPool(Device& device)
 void CommandManager::CreateCommandBuffers(Device& device)
 {
     vk::CommandBufferAllocateInfo allocInfo;
-    allocInfo.commandPool        = m_commandPool;
-    allocInfo.level              = vk::CommandBufferLevel::ePrimary;
+    allocInfo.commandPool = m_commandPool;
+    allocInfo.level = vk::CommandBufferLevel::ePrimary;
     allocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
 
     m_commandBuffers = vk::raii::CommandBuffers(device.GetDevice(), allocInfo);
@@ -66,8 +82,8 @@ void CommandManager::CreateSyncObjects(Device& device, Swapchain& swapchain)
 std::unique_ptr<vk::raii::CommandBuffer> CommandManager::BeginSingleTimeCommands(Device& device)
 {
     vk::CommandBufferAllocateInfo allocInfo;
-    allocInfo.commandPool= m_commandPool;
-    allocInfo.level= vk::CommandBufferLevel::ePrimary;
+    allocInfo.commandPool = m_commandPool;
+    allocInfo.level = vk::CommandBufferLevel::ePrimary;
     allocInfo.commandBufferCount = 1;
 
     auto commandBuffer = std::make_unique<vk::raii::CommandBuffer>(
@@ -86,7 +102,7 @@ void CommandManager::EndSingleTimeCommands(Device& device, vk::raii::CommandBuff
 
     vk::SubmitInfo submitInfo;
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers= &*commandBuffer;
+    submitInfo.pCommandBuffers = &*commandBuffer;
 
     device.GetQueue().submit(submitInfo, nullptr);
     device.GetQueue().waitIdle();

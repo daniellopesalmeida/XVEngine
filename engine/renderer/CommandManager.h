@@ -10,13 +10,16 @@ public:
     void Init(Device& device, Swapchain& swapchain);
     void Shutdown();
 
+    //called by Renderer after swapchain recreation (image count may have changed)
+    void RecreateSyncObjects(Device& device, Swapchain& swapchain);
+
     vk::raii::CommandPool& GetCommandPool() { return m_commandPool; }
     std::vector<vk::raii::CommandBuffer>& GetCommandBuffers() { return m_commandBuffers; }
     vk::raii::CommandBuffer& GetCommandBuffer(uint32_t frameIndex) { return m_commandBuffers[frameIndex]; }
 
     vk::raii::Semaphore& GetPresentCompleteSemaphore(uint32_t frameIndex) { return m_presentCompleteSemaphores[frameIndex]; }
     vk::raii::Semaphore& GetRenderFinishedSemaphore(uint32_t imageIndex) { return m_renderFinishedSemaphores[imageIndex]; }
-    vk::raii::Fence&     GetInFlightFence(uint32_t frameIndex) { return m_inFlightFences[frameIndex]; }
+    vk::raii::Fence& GetInFlightFence(uint32_t frameIndex) { return m_inFlightFences[frameIndex]; }
 
     // single time commands helper
     std::unique_ptr<vk::raii::CommandBuffer> BeginSingleTimeCommands(Device& device);

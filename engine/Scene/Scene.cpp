@@ -1,6 +1,8 @@
 #include "Scene.h"
+#include <utils/MeshLoader.h>
 #include <utils/Logger.h>
 #include <stdexcept>
+#include <utils/MeshLoader.h>
 
 void Scene::Init(Device& device, CommandManager& cmdManager)
 {
@@ -25,7 +27,7 @@ void Scene::Shutdown()
 
 ObjectHandle Scene::AddObject(
     const std::vector<Vertex>& vertices,
-    const std::vector<uint16_t>& indices,
+    const std::vector<uint32_t>& indices,
     const Transform& transform,
     const std::string& name)
 {
@@ -44,13 +46,13 @@ ObjectHandle Scene::AddObject(
     return handle;
 }
 
-ObjectHandle Scene::AddObject(
-    const std::string& meshName,
-    const Transform& transform)
+ObjectHandle Scene::AddObject(const std::string& meshName,const Transform& transform)
 {
     auto it = m_meshRegistry.find(meshName);
     if (it == m_meshRegistry.end())
+    {
         throw std::runtime_error("Mesh not found in scene: " + meshName);
+    }
 
     SceneObject obj;
     obj.transform = transform;
@@ -67,7 +69,9 @@ ObjectHandle Scene::AddObject(
 
 void Scene::RemoveObject(ObjectHandle handle)
 {
-    if (!HasObject(handle)) return;
+    if (!HasObject(handle)) 
+        return;
+
     m_alive[handle.id] = false;
     Logger::Info("Object removed: ", handle.id);
 }
@@ -75,22 +79,24 @@ void Scene::RemoveObject(ObjectHandle handle)
 SceneObject& Scene::GetObject(ObjectHandle handle)
 {
     if (!HasObject(handle))
+    {
         throw std::runtime_error("Invalid object handle");
+    }
     return m_objects[handle.id];
 }
 
 const SceneObject& Scene::GetObject(ObjectHandle handle) const
 {
     if (!HasObject(handle))
+    {
         throw std::runtime_error("Invalid object handle");
+    }
     return m_objects[handle.id];
 }
 
 bool Scene::HasObject(ObjectHandle handle) const
 {
-    return handle.IsValid() &&
-        handle.id < m_alive.size() &&
-        m_alive[handle.id];
+    return handle.IsValid() && handle.id < m_alive.size() && m_alive[handle.id];
 }
 
 void Scene::Update(float deltaTime)
@@ -123,17 +129,28 @@ RenderList Scene::BuildRenderList() const
     return list;
 }
 
-Mesh* Scene::GetOrCreateMesh(
-    const std::vector<Vertex>& vertices,
-    const std::vector<uint16_t>& indices,
-    const std::string& name)
+void Scene::LoadMesh(const std::filesystem::path& path, const std::string& name)
 {
-    // Reuse if named and already exists
+    if (m_meshRegistry.count(name))
+    {
+        Logger::Warn("Scene::LoadMesh — mesh already registered: '", name, "', skipping.");
+        return;
+    }
+
+    auto data = MeshLoader::Load(path);
+    GetOrCreateMesh(data.vertices, data.indices, name);
+}
+
+Mesh* Scene::GetOrCreateMesh(const std::vector<Vertex>& vertices,const std::vector<uint32_t>& indices,const std::string& name)
+{
+    //reuse if named and already exists
     if (!name.empty())
     {
         auto it = m_meshRegistry.find(name);
         if (it != m_meshRegistry.end())
+        {
             return it->second;
+        }
     }
 
     auto mesh = std::make_unique<Mesh>();
@@ -142,7 +159,9 @@ Mesh* Scene::GetOrCreateMesh(
     m_meshes.push_back(std::move(mesh));
 
     if (!name.empty())
+    {
         m_meshRegistry[name] = ptr;
+    }
 
     return ptr;
 }

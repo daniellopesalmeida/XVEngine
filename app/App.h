@@ -15,8 +15,10 @@ private:
     Engine& m_engine;
 
     //handles to objects
-    ObjectHandle m_objectHandle;
+    //ObjectHandle m_objectHandle;
+    std::unordered_map<std::string, ObjectHandle> m_Objects;
 
     void loadQuad(Scene* scene);
     void loadCube(Scene* scene);
+    void loadObj(Scene* scene);
 };

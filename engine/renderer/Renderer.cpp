@@ -68,15 +68,46 @@ void Renderer::CreatePipeline()
     m_pipeline.Init(m_device, config);
 }
 
+void Renderer::RecreateSwapchain()
+{
+    //stall while minimised (extent == 0,0)
+    while (m_window->GetWidth() == 0 || m_window->GetHeight() == 0)
+        glfwWaitEvents();
+
+    WaitIdle();
+
+    m_swapchain.Recreate(m_device, m_surface, *m_window);
+
+    //depth image must match the new extent
+    m_depthImage.Shutdown();
+    CreateDepthImage();
+
+    // recreate in case it changed
+    m_commandManager.RecreateSyncObjects(m_device, m_swapchain);
+
+    m_needsResize = false;
+    Logger::Info("Swapchain recreated: ",
+        m_swapchain.GetExtent().width, "x", m_swapchain.GetExtent().height);
+}
+
 bool Renderer::BeginFrame(const RenderList& list)
 {
+    //react to a pending resize before doing anything with the swapchain
+    if (m_needsResize || m_window->WasResized())
+    {
+        m_window->ClearResized();
+        RecreateSwapchain();
+        return false;
+    }
+
     auto& fence = m_commandManager.GetInFlightFence(m_currentFrame);
     auto& cmd = m_commandManager.GetCommandBuffer(m_currentFrame);
 
     //wait for this frame to be free
-    if (m_device.GetDevice().waitForFences(*fence, true,
-        std::numeric_limits<uint64_t>::max()) != vk::Result::eSuccess)
-        throw std::runtime_error("waitForFences() failed");
+    if (m_device.GetDevice().waitForFences(*fence, true,std::numeric_limits<uint64_t>::max()) != vk::Result::eSuccess)
+    {
+        throw std::runtime_error("waitForFences failed");
+    }
 
     //acquire swapchain image
     auto [result, imageIndex] = m_swapchain.GetSwapchain().acquireNextImage(
@@ -86,7 +117,7 @@ bool Renderer::BeginFrame(const RenderList& list)
 
     if (result == vk::Result::eErrorOutOfDateKHR)
     {
-        // TODO: handle resize
+        RecreateSwapchain();
         return false;
     }
 
@@ -174,7 +205,7 @@ void Renderer::DrawFrame(const RenderList& list)
             0, pc);
 
         cmd.bindVertexBuffers(0, *dc.mesh->GetVertexBuffer().GetBuffer(), vk::DeviceSize{ 0 });
-        cmd.bindIndexBuffer(*dc.mesh->GetIndexBuffer().GetBuffer(), 0, vk::IndexType::eUint16);
+        cmd.bindIndexBuffer(*dc.mesh->GetIndexBuffer().GetBuffer(), 0, vk::IndexType::eUint32);
         cmd.drawIndexed(dc.mesh->GetIndexCount(), 1, 0, 0, 0);
     }
 }
@@ -240,7 +271,9 @@ void Renderer::EndFrame()
     auto result = m_device.GetQueue().presentKHR(presentInfo);
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
     {
-        // TODO: handle resize
+        //mark for recreation at the top of the next BeginFrame, after the fence wait
+        //do not call RecreateSwapchain() here, command buffer is already submitted
+        m_needsResize = true;
     }
 
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;

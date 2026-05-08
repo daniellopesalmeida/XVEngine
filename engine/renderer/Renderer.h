@@ -29,6 +29,7 @@ public:
 private:
     Window* m_window = nullptr;
     bool m_initialized = false;
+    bool m_needsResize = false;
     vk::PhysicalDeviceType m_preferredGPUType = vk::PhysicalDeviceType::eDiscreteGpu;
 
     uint32_t m_currentFrame = 0;
@@ -40,10 +41,11 @@ private:
     Device m_device;
     Swapchain m_swapchain;
     CommandManager m_commandManager;
-    Image m_depthImage;
+    Image  m_depthImage;
     Pipeline m_pipeline;
 
     void CreateSurface();
     void CreateDepthImage();
     void CreatePipeline();
+    void RecreateSwapchain();
 };
