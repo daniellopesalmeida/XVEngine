@@ -1,6 +1,5 @@
 #include "Window.h"
 #include <stdexcept>
-#include <iostream>
 #include <utils/Logger.h>
 
 void Window::Init(uint32_t width, uint32_t height, const std::string& title)
@@ -19,7 +18,12 @@ void Window::Init(uint32_t width, uint32_t height, const std::string& title)
     if (!m_window)
         throw std::runtime_error("Failed to create GLFW window");
 
-    Logger::Info("Window initialized: ",m_width, "x", m_height," - ", m_title);
+    glfwSetWindowUserPointer(m_window, this);
+    glfwSetKeyCallback(m_window, KeyCallback);
+    glfwSetCursorPosCallback(m_window, CursorCallback);
+    glfwSetMouseButtonCallback(m_window, MouseButtonCallback);
+
+    Logger::Info("Window initialized: ", m_width, "x", m_height, " - ", m_title);
 }
 
 void Window::Shutdown()
@@ -34,4 +38,32 @@ void Window::Shutdown()
 }
 
 bool Window::ShouldClose() const { return glfwWindowShouldClose(m_window); }
-void Window::PollEvents()  const { glfwPollEvents(); }
+void Window::PollEvents() const { glfwPollEvents(); }
+
+void Window::KeyCallback(GLFWwindow* w, int key, int, int action, int)
+{
+    auto* self = static_cast<Window*>(glfwGetWindowUserPointer(w));
+    if (self->m_keyCb) self->m_keyCb(key, action);
+}
+
+void Window::CursorCallback(GLFWwindow* w, double x, double y)
+{
+    auto* self = static_cast<Window*>(glfwGetWindowUserPointer(w));
+    if (self->m_firstMouse)
+    {
+        self->m_lastMouseX = x;
+        self->m_lastMouseY = y;
+        self->m_firstMouse = false;
+    }
+    double dx = x - self->m_lastMouseX;
+    double dy = y - self->m_lastMouseY;
+    self->m_lastMouseX = x;
+    self->m_lastMouseY = y;
+    if (self->m_mouseCb) self->m_mouseCb(dx, dy);
+}
+
+void Window::MouseButtonCallback(GLFWwindow* w, int button, int action, int)
+{
+    auto* self = static_cast<Window*>(glfwGetWindowUserPointer(w));
+    if (self->m_mouseButtonCb) self->m_mouseButtonCb(button, action);
+}

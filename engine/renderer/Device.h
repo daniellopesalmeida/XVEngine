@@ -15,7 +15,7 @@ public:
     vk::SampleCountFlagBits GetMsaaSamples() { return m_msaaSamples; }
 
 private:
-    vk::PhysicalDeviceType m_preferredGPUType;
+    vk::PhysicalDeviceType m_preferredGPUType=vk::PhysicalDeviceType::eIntegratedGpu;
     vk::raii::PhysicalDevice m_physicalDevice = nullptr;
     vk::raii::Device m_device = nullptr;
     vk::raii::Queue m_queue = nullptr;

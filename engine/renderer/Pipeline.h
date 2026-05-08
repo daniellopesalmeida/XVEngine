@@ -18,7 +18,7 @@ struct PipelineConfig
 
     //rasterization
     vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
-    vk::CullModeFlags       cullMode = vk::CullModeFlagBits::eBack;
+    vk::CullModeFlags       cullMode = vk::CullModeFlagBits::eBack; //no culling
     vk::FrontFace           frontFace = vk::FrontFace::eClockwise;
     bool                    depthTest = true;
     bool                    depthWrite = true;
@@ -30,6 +30,10 @@ struct PipelineConfig
 
     //descriptorset layouts
     std::vector<vk::DescriptorSetLayout> descriptorSetLayouts;
+
+    bool useVertexInput = false;  //false = hardcoded shader vertices, true = bound VBO
+    vk::VertexInputBindingDescription                    vertexBinding{};
+    std::vector<vk::VertexInputAttributeDescription>     vertexAttributes{};
 };
 
 class Pipeline

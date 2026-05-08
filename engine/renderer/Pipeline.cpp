@@ -40,7 +40,14 @@ void Pipeline::Init(Device& device, const PipelineConfig& config)
     } };
 
     // ── Vertex input (empty — driven by push constants / SSBOs) ───────
-    vk::PipelineVertexInputStateCreateInfo   vertexInput{};
+    vk::PipelineVertexInputStateCreateInfo vertexInput{};
+    if (config.useVertexInput)
+    {
+        vertexInput.vertexBindingDescriptionCount = 1;
+        vertexInput.pVertexBindingDescriptions = &config.vertexBinding;
+        vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(config.vertexAttributes.size());
+        vertexInput.pVertexAttributeDescriptions = config.vertexAttributes.data();
+    }
     vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
 

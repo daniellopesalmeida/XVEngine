@@ -53,22 +53,32 @@ endforeach()
 
 add_custom_target(Shaders ALL DEPENDS ${SPV_FILES})
 
-# source and header collection
 file(GLOB_RECURSE SOURCES
     "main.cpp"
     "engine/**/*.cpp"
+    "app/*.cpp"       
+    "app/**/*.cpp"    
 )
 
 file(GLOB_RECURSE HEADERS
     "engine/**/*.h"
+    "app/*.h"
+    "app/**/*.h"
 )
+
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/app"
+    "${CMAKE_SOURCE_DIR}/engine"
+)
+
 
 add_executable(XVEngine ${SOURCES} ${HEADERS})
 add_dependencies(XVEngine Shaders)
 
 target_include_directories(XVEngine PRIVATE
-    ${CMAKE_SOURCE_DIR}          # #include for main.cpp
-    ${CMAKE_SOURCE_DIR}/engine   
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_SOURCE_DIR}/app
     ${Vulkan_INCLUDE_DIRS}
 )
 

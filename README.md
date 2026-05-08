@@ -5,7 +5,7 @@ This is an ongoing project with the main goal of creating a 3D engine built from
 ![C++](https://img.shields.io/badge/C%2B%2B-20-blue?logo=c%2B%2B) ![Vulkan](https://img.shields.io/badge/Vulkan-1.4-red?logo=vulkan) ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey?logo=windows)
 
 
-# Current State: Hello triangle
+# Current State: Colored rotating quad
 
 ## Features
 
@@ -15,29 +15,25 @@ This is an ongoing project with the main goal of creating a 3D engine built from
 - **Slang shaders** — compiled to SPIR-V directly at build time via CMake
 - **GLFW 3.4** windowing with Vulkan surface integration
 - **Scored GPU selection** — picks the best available device, configurable at runtime
+- **Scene system** — `Scene` owns objects (mesh + transform), `SceneManager` drives lifecycle
+- **FPS camera** — WASD movement, right-click drag to look
+- **Staging buffer uploads** — CPU geometry copied to device-local GPU memory
+- **Push constants** — per-object MVP matrix, 64 bytes
 
 
 ## Architecture
 
 ```
-XVEngine/
-├── engine/
-│   ├── core/
-│   │   ├── App          — main application loop (init / loop / shutdown)
-│   │   └── Window       — GLFW window and input
-│   ├── renderer/
-│   │   ├── Renderer     — frame orchestration (BeginFrame / EndFrame / DrawFrame)
-│   │   ├── Instance     — Vulkan instance, validation layers, debug messenger
-│   │   ├── Device       — physical device selection, logical device, graphics queue
-│   │   ├── Swapchain    — surface format, present mode, image views
-│   │   ├── CommandManager — command pool, command buffers, sync objects
-│   │   ├── Pipeline     — graphics pipeline with dynamic rendering and push constants
-│   │   └── Image        — generic GPU image (allocation, view, layout transitions)
-│   └── utils/
-│       └── Logger       — colour-coded console logging (Info / Warn / Error)
-├── shaders/
-│   └── *.slang          — Slang shader sources (compiled to .spv at build time)
-└── CMakeLists.txt
+/XVEngine
+  /app           — App layer
+  /engine
+    /core        — Engine, Window, SceneManager
+    /renderer    — Renderer, Instance, Device, Swapchain, CommandManager,
+                   Image, Pipeline, Buffer, Mesh, Vertex, ObjectData
+    /scene       — Scene, SceneObject, SceneManager, Camera, Transform,
+                   MeshInstance, ObjectHandle, RenderList
+    /utils       — Logger
+  /shaders       — *.slang → *.spv at build time
 ```
 
 
@@ -94,6 +90,14 @@ waitForFences → acquireNextImage → resetFences
 
 Two frames in flight. Semaphores are per-swapchain-image for render-finished signals, per-frame for present-complete.
 
+## Controls
+
+| Input | Action |
+|-------|--------|
+| W / S | Move forward / back |
+| A / D | Move left / right |
+| Q / E | Move up / down |
+| Right-click + drag | Look around |
 
 ## Roadmap
 
@@ -102,16 +106,17 @@ Two frames in flight. Semaphores are per-swapchain-image for render-finished sig
 - [x] Logical device, graphics queue
 - [x] Swapchain (triple buffered, mailbox preferred)
 - [x] Command pool, command buffers, sync objects
-- [x] Generic `Image` class with layout transitions via `pipelineBarrier2`
+- [x] Generic `Image` class with layout transitions
 - [x] Graphics pipeline with dynamic rendering
 - [x] Depth buffer
-- [x] Hello triangle (currntly hardcoded in shader, RGB gradient)
-- [ ] Vertex buffer 
-- [ ] Push constants — object transform matrix
-- [ ] Swapchain resize / `eErrorOutOfDateKHR` handling
-- [ ] Index buffer
+- [x] Vertex + index buffers (staging buffer upload)
+- [x] Push constants — per-object MVP matrix
+- [x] Scene system — object handles, mesh ownership, render list
+- [x] FPS camera — WASD + mouse look, Vulkan Y-flip
+- [x] Engine loop — fixed + variable update, frame cap
+- [x] Colored rotating quad end-to-end
+- [ ] Swapchain resize handling
 - [ ] Mesh loading (tinyobjloader)
 - [ ] Descriptor sets — UBOs and textures
 - [ ] MSAA
-- [ ] Camera and scene
 

@@ -1,13 +1,7 @@
-static const float2 positions[3] = {
-    float2( 0.0, -0.5),
-    float2( 0.5,  0.5),
-    float2(-0.5,  0.5)
-};
-
-static const float3 colors[3] = {
-    float3(1.0, 0.0, 0.0),
-    float3(0.0, 1.0, 0.0),
-    float3(0.0, 0.0, 1.0)
+struct VertexInput
+{
+    float3 position : POSITION;
+    float3 color    : COLOR;
 };
 
 struct VertexOutput
@@ -16,12 +10,23 @@ struct VertexOutput
     float3 color    : COLOR;
 };
 
+struct ObjectData
+{
+    float4x4 mvp;
+};
+
+[[vk::push_constant]]
+ConstantBuffer<ObjectData> objectData;
+
 [shader("vertex")]
-VertexOutput vertMain(uint vertexID : SV_VertexID)
+VertexOutput vertMain(VertexInput input)
 {
     VertexOutput output;
-    output.position = float4(positions[vertexID], 0.0, 1.0);
-    output.color    = colors[vertexID];
+
+    output.position = mul(objectData.mvp, float4(input.position, 1.0));
+
+    output.color = input.color;
+
     return output;
 }
 
@@ -29,4 +34,5 @@ VertexOutput vertMain(uint vertexID : SV_VertexID)
 float4 fragMain(VertexOutput input) : SV_Target
 {
     return float4(input.color, 1.0);
+    //return float4(1,0,0,1);
 }
