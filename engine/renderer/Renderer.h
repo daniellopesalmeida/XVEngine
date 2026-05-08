@@ -9,6 +9,7 @@
 #include <renderer/Pipeline.h>
 #include <renderer/ObjectData.h>
 #include <scene/RenderList.h>
+#include "DescriptorManager.h"
 
 class Renderer
 {
@@ -41,6 +42,7 @@ private:
     Device m_device;
     Swapchain m_swapchain;
     CommandManager m_commandManager;
+    DescriptorManager m_descriptorManager;
     Image  m_depthImage;
     Pipeline m_pipeline;
 

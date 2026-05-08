@@ -19,6 +19,7 @@ public:
     GLFWwindow* GetHandle() const { return m_window; }
     uint32_t GetWidth() const { return m_width; }
     uint32_t GetHeight() const { return m_height; }
+    float GetAspect()  const;
 
     //callbacks
     void SetKeyCallback(std::function<void(int, int)> cb) { m_keyCb = std::move(cb); }

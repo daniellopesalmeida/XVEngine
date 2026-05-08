@@ -8,7 +8,7 @@ void Engine::Init()
 {
     m_window.Init(800, 600, "XVEngine");
     m_renderer.Init(m_window);
-    m_sceneManager.Init(m_renderer.GetDevice(), m_renderer.GetCommandManager());
+    m_sceneManager.Init(m_renderer.GetDevice(), m_renderer.GetCommandManager(), m_window.GetAspect());
     RegisterWindowCallbacks();
     Logger::Info("Engine initialized");
 }

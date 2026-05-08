@@ -4,12 +4,11 @@
 #include <stdexcept>
 #include <utils/MeshLoader.h>
 
-void Scene::Init(Device& device, CommandManager& cmdManager)
+void Scene::Init(Device& device, CommandManager& cmdManager, float aspect)
 {
     m_device = &device;
     m_cmdManager = &cmdManager;
 
-    float aspect = 16.f / 9.f;  // updated when swapchain is known
     m_camera.Init(60.f, aspect, 0.01f, 1000.f);
 
     Logger::Info("Scene initialized");
@@ -112,7 +111,8 @@ void Scene::FixedUpdate(float deltaTime)
 RenderList Scene::BuildRenderList() const
 {
     RenderList list;
-    list.viewProj = m_camera.GetViewProj();
+    list.view = m_camera.GetView();
+    list.proj = m_camera.GetProj();
 
     for (uint32_t i = 0; i < m_objects.size(); i++)
     {

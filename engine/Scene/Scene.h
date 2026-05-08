@@ -17,7 +17,7 @@
 class Scene
 {
 public:
-    void Init(Device& device, CommandManager& cmdManager);
+    void Init(Device& device, CommandManager& cmdManager, float aspect);
     void Shutdown();
 
     //add an object from raw geometry

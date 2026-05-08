@@ -38,7 +38,15 @@ void Window::Shutdown()
     Logger::Info("Window shutdown");
 }
 
-bool Window::ShouldClose() const { return glfwWindowShouldClose(m_window); }
+bool Window::ShouldClose() const 
+{ 
+    return glfwWindowShouldClose(m_window); 
+}
+
+float Window::GetAspect() const
+{
+    return m_height > 0 ? static_cast<float>(m_width) / static_cast<float>(m_height) : 1.f;
+}
 void Window::PollEvents()  const { glfwPollEvents(); }
 
 void Window::KeyCallback(GLFWwindow* w, int key, int, int action, int)

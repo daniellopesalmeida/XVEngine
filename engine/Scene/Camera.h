@@ -11,6 +11,8 @@ public:
     void SetAspect(float aspect) { m_aspect = aspect; RecalcProjection(); }
 
     glm::mat4 GetViewProj() const { return m_proj * m_view; }
+    glm::mat4 GetView() const { return m_view; }
+    glm::mat4 GetProj() const { return m_proj; }
 
     void OnKey(int key, int action);
     void OnMouseMove(double dx, double dy);

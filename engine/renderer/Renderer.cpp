@@ -13,6 +13,7 @@ void Renderer::Init(Window& window)
     m_device.Init(m_instance, m_surface, m_preferredGPUType);
     m_swapchain.Init(m_device, m_surface, *m_window);
     m_commandManager.Init(m_device, m_swapchain);
+    m_descriptorManager.Init(m_device, m_commandManager);
     CreateDepthImage();
     CreatePipeline();
 
@@ -24,7 +25,9 @@ void Renderer::CreateSurface()
 {
     VkSurfaceKHR surface;
     if (glfwCreateWindowSurface(*m_instance.GetInstance(), m_window->GetHandle(), nullptr, &surface) != VK_SUCCESS)
+    {
         throw std::runtime_error("Failed to create window surface!");
+    }
 
     m_surface = vk::raii::SurfaceKHR(m_instance.GetInstance(), surface);
     Logger::Info("Window surface created");
@@ -64,6 +67,7 @@ void Renderer::CreatePipeline()
     config.vertexAttributes = { attrs.begin(), attrs.end() };
     config.pushConstantSize = sizeof(ObjectData);
     config.pushConstantStages = vk::ShaderStageFlagBits::eVertex;
+    config.descriptorSetLayouts = { m_descriptorManager.GetLayout() };
 
     m_pipeline.Init(m_device, config);
 }
@@ -175,6 +179,19 @@ bool Renderer::BeginFrame(const RenderList& list)
     //pipeline and set dynamic viewport/scissor
     m_pipeline.Bind(cmd);
 
+    //write view/proj into this frame's UBO and bind the descriptor set
+    FrameData frameData{};
+    frameData.view = list.view;
+    frameData.proj = list.proj;
+    m_descriptorManager.UpdateFrameData(m_currentFrame, frameData);
+
+    cmd.bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        *m_pipeline.GetPipelineLayout(),
+        0,
+        *m_descriptorManager.GetDescriptorSet(m_currentFrame),
+        nullptr);
+
     vk::Viewport viewport{};
     viewport.x = 0.f;
     viewport.y = 0.f;
@@ -197,7 +214,7 @@ void Renderer::DrawFrame(const RenderList& list)
     for (const auto& dc : list.drawCalls)
     {
         ObjectData pc{};
-        pc.mvp = list.viewProj * dc.transform;
+        pc.model = dc.transform;
 
         cmd.pushConstants<ObjectData>(
             *m_pipeline.GetPipelineLayout(),
@@ -272,7 +289,7 @@ void Renderer::EndFrame()
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
     {
         //mark for recreation at the top of the next BeginFrame, after the fence wait
-        //do not call RecreateSwapchain() here, command buffer is already submitted
+        //o not call RecreateSwapchain() here, command buffer is already submitted
         m_needsResize = true;
     }
 
@@ -287,6 +304,7 @@ void Renderer::Shutdown()
     WaitIdle();
     m_pipeline.Shutdown();
     m_depthImage.Shutdown();
+    m_descriptorManager.Shutdown();
     m_commandManager.Shutdown();
     m_swapchain.Shutdown();
     m_initialized = false;

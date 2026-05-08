@@ -4,13 +4,14 @@
 
 struct DrawCall
 {
-    glm::mat4 transform;
-    struct Mesh* mesh;  //non-owning
+    glm::mat4 transform;  //model matrix
+    struct Mesh* mesh;    //non-owning
 };
 
 struct RenderList
 {
-    glm::mat4 viewProj;
+    glm::mat4 view;
+    glm::mat4 proj;
     std::vector<DrawCall> drawCalls;
 
     void Clear() { drawCalls.clear(); }

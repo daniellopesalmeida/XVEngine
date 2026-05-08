@@ -2,10 +2,11 @@
 #include <utils/Logger.h>
 #include <stdexcept>
 
-void SceneManager::Init(Device& device, CommandManager& cmdManager)
+void SceneManager::Init(Device& device, CommandManager& cmdManager, float aspect)
 {
     m_device = &device;
     m_cmdManager = &cmdManager;
+    m_aspect = aspect;
     Logger::Info("SceneManager initialized");
 }
 
@@ -24,7 +25,7 @@ Scene* SceneManager::AddScene(const std::string& name)
         throw std::runtime_error("Scene already exists: " + name);
 
     auto scene = std::make_unique<Scene>();
-    scene->Init(*m_device, *m_cmdManager);
+    scene->Init(*m_device, *m_cmdManager,m_aspect);
     Scene* ptr = scene.get();
     m_scenes[name] = std::move(scene);
 

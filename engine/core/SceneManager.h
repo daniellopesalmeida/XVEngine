@@ -7,7 +7,7 @@
 class SceneManager
 {
 public:
-    void Init(Device& device, CommandManager& cmdManager);
+    void Init(Device& device, CommandManager& cmdManager, float aspect);
     void Shutdown();
 
     //creates an empty scene and returns a ptr to it
@@ -28,6 +28,7 @@ public:
 private:
     Device* m_device = nullptr;
     CommandManager* m_cmdManager = nullptr;
+    float m_aspect = 1.f;
 
     std::unordered_map<std::string, std::unique_ptr<Scene>> m_scenes;
     Scene* m_activeScene = nullptr;
