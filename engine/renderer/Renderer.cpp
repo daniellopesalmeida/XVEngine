@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include "Vertex.h"
 #include <renderer/Mesh.h>
+#include <glm/gtc/matrix_inverse.hpp>
 
 void Renderer::Init(Window& window)
 {
@@ -25,9 +26,7 @@ void Renderer::CreateSurface()
 {
     VkSurfaceKHR surface;
     if (glfwCreateWindowSurface(*m_instance.GetInstance(), m_window->GetHandle(), nullptr, &surface) != VK_SUCCESS)
-    {
         throw std::runtime_error("Failed to create window surface!");
-    }
 
     m_surface = vk::raii::SurfaceKHR(m_instance.GetInstance(), surface);
     Logger::Info("Window surface created");
@@ -41,7 +40,6 @@ void Renderer::CreateDepthImage()
     config.format = vk::Format::eD32Sfloat;
     config.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment;
     config.aspectMask = vk::ImageAspectFlagBits::eDepth;
-    //config.samples = m_device.GetMsaaSamples();
     config.samples = vk::SampleCountFlagBits::e1;
 
     m_depthImage.Init(m_device, m_commandManager, config);
@@ -60,7 +58,6 @@ void Renderer::CreatePipeline()
     config.fragShaderPath = "shaders/shader.frag.spv";
     config.colorAttachmentFormats = { m_swapchain.GetSurfaceFormat().format };
     config.depthAttachmentFormat = vk::Format::eD32Sfloat;
-    //config.msaaSamples = m_device.GetMsaaSamples();
     config.msaaSamples = vk::SampleCountFlagBits::e1;
     config.useVertexInput = true;
     config.vertexBinding = binding;
@@ -74,7 +71,6 @@ void Renderer::CreatePipeline()
 
 void Renderer::RecreateSwapchain()
 {
-    //stall while minimised (extent == 0,0)
     while (m_window->GetWidth() == 0 || m_window->GetHeight() == 0)
         glfwWaitEvents();
 
@@ -82,11 +78,9 @@ void Renderer::RecreateSwapchain()
 
     m_swapchain.Recreate(m_device, m_surface, *m_window);
 
-    //depth image must match the new extent
     m_depthImage.Shutdown();
     CreateDepthImage();
 
-    // recreate in case it changed
     m_commandManager.RecreateSyncObjects(m_device, m_swapchain);
 
     m_needsResize = false;
@@ -107,11 +101,8 @@ bool Renderer::BeginFrame(const RenderList& list)
     auto& fence = m_commandManager.GetInFlightFence(m_currentFrame);
     auto& cmd = m_commandManager.GetCommandBuffer(m_currentFrame);
 
-    //wait for this frame to be free
-    if (m_device.GetDevice().waitForFences(*fence, true,std::numeric_limits<uint64_t>::max()) != vk::Result::eSuccess)
-    {
+    if (m_device.GetDevice().waitForFences(*fence, true, std::numeric_limits<uint64_t>::max()) != vk::Result::eSuccess)
         throw std::runtime_error("waitForFences failed");
-    }
 
     //acquire swapchain image
     auto [result, imageIndex] = m_swapchain.GetSwapchain().acquireNextImage(
@@ -179,10 +170,19 @@ bool Renderer::BeginFrame(const RenderList& list)
     //pipeline and set dynamic viewport/scissor
     m_pipeline.Bind(cmd);
 
-    //write view/proj into this frame's UBO and bind the descriptor set
+    //fill FrameData UBO with camera + lighting
     FrameData frameData{};
     frameData.view = list.view;
     frameData.proj = list.proj;
+    frameData.lightDir = glm::vec4(glm::normalize(list.lightDir), 0.f);
+    frameData.lightColor = glm::vec4(list.lightColor, 0.f);
+    frameData.cameraPos = glm::vec4(list.cameraPos, 0.f);
+    frameData.lightParams = glm::vec4(
+        list.ambientStrength,
+        list.specularStrength,
+        list.shininess,
+        0.f);
+
     m_descriptorManager.UpdateFrameData(m_currentFrame, frameData);
 
     cmd.bindDescriptorSets(
@@ -213,8 +213,16 @@ void Renderer::DrawFrame(const RenderList& list)
 
     for (const auto& dc : list.drawCalls)
     {
+        //compute normal matrix CPU-side (inverse-transpose)
+        //correctly handles non-uniform scaling without distorting normals
+        glm::mat3 normalMat = glm::inverseTranspose(glm::mat3(dc.transform));
+
         ObjectData pc{};
         pc.model = dc.transform;
+        //pack mat3 into 3x vec4 (shader reads .xyz of each)
+        pc.normalRow0 = glm::vec4(normalMat[0], 0.f);  // column 0 of mat3
+        pc.normalRow1 = glm::vec4(normalMat[1], 0.f);  // column 1
+        pc.normalRow2 = glm::vec4(normalMat[2], 0.f);  // column 2
 
         cmd.pushConstants<ObjectData>(
             *m_pipeline.GetPipelineLayout(),
@@ -234,7 +242,7 @@ void Renderer::EndFrame()
 
     cmd.endRendering();
 
-    //swapchain image to present
+    //color attachment 
     vk::ImageMemoryBarrier2 barrier{};
     barrier.image = m_swapchain.GetImages()[m_imageIndex];
     barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
@@ -287,11 +295,7 @@ void Renderer::EndFrame()
 
     auto result = m_device.GetQueue().presentKHR(presentInfo);
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR)
-    {
-        //mark for recreation at the top of the next BeginFrame, after the fence wait
-        //o not call RecreateSwapchain() here, command buffer is already submitted
         m_needsResize = true;
-    }
 
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
@@ -300,7 +304,6 @@ void Renderer::Shutdown()
 {
     if (!m_initialized) return;
 
-    //m_device.GetDevice().waitIdle();
     WaitIdle();
     m_pipeline.Shutdown();
     m_depthImage.Shutdown();

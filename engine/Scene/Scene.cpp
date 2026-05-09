@@ -45,13 +45,11 @@ ObjectHandle Scene::AddObject(
     return handle;
 }
 
-ObjectHandle Scene::AddObject(const std::string& meshName,const Transform& transform)
+ObjectHandle Scene::AddObject(const std::string& meshName, const Transform& transform)
 {
     auto it = m_meshRegistry.find(meshName);
     if (it == m_meshRegistry.end())
-    {
         throw std::runtime_error("Mesh not found in scene: " + meshName);
-    }
 
     SceneObject obj;
     obj.transform = transform;
@@ -68,9 +66,7 @@ ObjectHandle Scene::AddObject(const std::string& meshName,const Transform& trans
 
 void Scene::RemoveObject(ObjectHandle handle)
 {
-    if (!HasObject(handle)) 
-        return;
-
+    if (!HasObject(handle)) return;
     m_alive[handle.id] = false;
     Logger::Info("Object removed: ", handle.id);
 }
@@ -78,18 +74,14 @@ void Scene::RemoveObject(ObjectHandle handle)
 SceneObject& Scene::GetObject(ObjectHandle handle)
 {
     if (!HasObject(handle))
-    {
         throw std::runtime_error("Invalid object handle");
-    }
     return m_objects[handle.id];
 }
 
 const SceneObject& Scene::GetObject(ObjectHandle handle) const
 {
     if (!HasObject(handle))
-    {
         throw std::runtime_error("Invalid object handle");
-    }
     return m_objects[handle.id];
 }
 
@@ -105,7 +97,7 @@ void Scene::Update(float deltaTime)
 
 void Scene::FixedUpdate(float deltaTime)
 {
-    //physics / collision
+    // physics / collision
 }
 
 RenderList Scene::BuildRenderList() const
@@ -113,6 +105,14 @@ RenderList Scene::BuildRenderList() const
     RenderList list;
     list.view = m_camera.GetView();
     list.proj = m_camera.GetProj();
+    list.cameraPos = m_camera.GetPosition();
+
+    // Copy scene light settings into the render list
+    list.lightDir = lightDir;
+    list.lightColor = lightColor;
+    list.ambientStrength = ambientStrength;
+    list.specularStrength = specularStrength;
+    list.shininess = shininess;
 
     for (uint32_t i = 0; i < m_objects.size(); i++)
     {
@@ -141,16 +141,16 @@ void Scene::LoadMesh(const std::filesystem::path& path, const std::string& name)
     GetOrCreateMesh(data.vertices, data.indices, name);
 }
 
-Mesh* Scene::GetOrCreateMesh(const std::vector<Vertex>& vertices,const std::vector<uint32_t>& indices,const std::string& name)
+Mesh* Scene::GetOrCreateMesh(
+    const std::vector<Vertex>& vertices,
+    const std::vector<uint32_t>& indices,
+    const std::string& name)
 {
-    //reuse if named and already exists
     if (!name.empty())
     {
         auto it = m_meshRegistry.find(name);
         if (it != m_meshRegistry.end())
-        {
             return it->second;
-        }
     }
 
     auto mesh = std::make_unique<Mesh>();
@@ -159,9 +159,7 @@ Mesh* Scene::GetOrCreateMesh(const std::vector<Vertex>& vertices,const std::vect
     m_meshes.push_back(std::move(mesh));
 
     if (!name.empty())
-    {
         m_meshRegistry[name] = ptr;
-    }
 
     return ptr;
 }

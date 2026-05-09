@@ -20,15 +20,15 @@ public:
     void Init(Device& device, CommandManager& cmdManager, float aspect);
     void Shutdown();
 
-    //add an object from raw geometry
+    //Add an object from raw geometry
     ObjectHandle AddObject(
         const std::vector<Vertex>& vertices,
         const std::vector<uint32_t>& indices,
         const Transform& transform = {},
         const std::string& name = "");
 
-    //add an object reusing an already-added mesh by name
-    ObjectHandle AddObject(const std::string& meshName,const Transform& transform = {});
+    //Add an object reusing an already-registered mesh by name
+    ObjectHandle AddObject(const std::string& meshName, const Transform& transform = {});
 
     //load a mesh from an .obj file and register it under 'name'
     //use AddObject(name, transform) to place instances
@@ -44,7 +44,15 @@ public:
     //camera
     Camera& GetCamera() { return m_camera; }
 
-    //called by engine each frame
+    // Lighting — configure once in App::Load, overrideable per frame
+    // lightDir points TOWARD the light source (normalised before use)
+    glm::vec3 lightDir = glm::normalize(glm::vec3(-0.3f, -1.f, -0.5f));
+    glm::vec3 lightColor = { 1.f, 1.f, 1.f };
+    float ambientStrength = 0.15f;
+    float specularStrength = 0.5f;
+    float shininess = 32.f;
+
+    // Called by Engine each frame
     void Update(float deltaTime);
     void FixedUpdate(float deltaTime);
 
@@ -57,10 +65,9 @@ private:
     Camera m_camera;
 
     std::vector<SceneObject> m_objects;
-    std::vector<bool> m_alive;   //slot alive flags
-    std::vector<std::unique_ptr<Mesh>> m_meshes;  //scene owns meshes
+    std::vector<bool> m_alive;   // slot alive flags
+    std::vector<std::unique_ptr<Mesh>> m_meshes;  // scene owns meshes
 
-    //name tomesh ptr 
     std::unordered_map<std::string, Mesh*> m_meshRegistry;
 
     uint32_t m_nextId = 0;

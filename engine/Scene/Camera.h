@@ -13,6 +13,7 @@ public:
     glm::mat4 GetViewProj() const { return m_proj * m_view; }
     glm::mat4 GetView() const { return m_view; }
     glm::mat4 GetProj() const { return m_proj; }
+    glm::vec3 GetPosition()  const { return m_position; }
 
     void OnKey(int key, int action);
     void OnMouseMove(double dx, double dy);
@@ -31,9 +32,9 @@ private:
     float m_near = 0.01f;
     float m_far = 1000.f;
 
-    bool m_keys[512] = {};
-    bool m_mouseCapture = false;
-    float m_moveSpeed = 3.f;
+    bool  m_keys[512] = {};
+    bool  m_mouseCapture = false;
+    float m_moveSpeed = 20.f;
     float m_sensitivity = 0.1f;
 
     glm::mat4 m_view = glm::mat4(1.f);
