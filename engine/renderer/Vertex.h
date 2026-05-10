@@ -9,6 +9,8 @@ struct Vertex
     glm::vec3 color;
     glm::vec3 normal;
     glm::vec2 texCoord;
+    glm::vec3 tangent;   // world-space tangent for TBN normal mapping
+    // bitangent = cross(normal, tangent), computed in shader
 
     static vk::VertexInputBindingDescription GetBindingDescription()
     {
@@ -19,9 +21,9 @@ struct Vertex
         return desc;
     }
 
-    static std::array<vk::VertexInputAttributeDescription, 4> GetAttributeDescriptions()
+    static std::array<vk::VertexInputAttributeDescription, 5> GetAttributeDescriptions()
     {
-        std::array<vk::VertexInputAttributeDescription, 4> attrs{};
+        std::array<vk::VertexInputAttributeDescription, 5> attrs{};
 
         // location 0 — position
         attrs[0].binding = 0;
@@ -46,6 +48,12 @@ struct Vertex
         attrs[3].location = 3;
         attrs[3].format = vk::Format::eR32G32Sfloat;
         attrs[3].offset = offsetof(Vertex, texCoord);
+
+        // location 4 — tangent
+        attrs[4].binding = 0;
+        attrs[4].location = 4;
+        attrs[4].format = vk::Format::eR32G32B32Sfloat;
+        attrs[4].offset = offsetof(Vertex, tangent);
 
         return attrs;
     }

@@ -1,13 +1,15 @@
 #include "Scene.h"
+#include <renderer/DescriptorManager.h>
 #include <utils/MeshLoader.h>
 #include <utils/Logger.h>
 #include <stdexcept>
-#include <utils/MeshLoader.h>
 
-void Scene::Init(Device& device, CommandManager& cmdManager, float aspect)
+void Scene::Init(Device& device, CommandManager& cmdManager,
+    DescriptorManager& descriptorManager, float aspect)
 {
     m_device = &device;
     m_cmdManager = &cmdManager;
+    m_descMgr = &descriptorManager;
 
     m_camera.Init(60.f, aspect, 0.01f, 1000.f);
 
@@ -18,9 +20,15 @@ void Scene::Shutdown()
 {
     m_objects.clear();
     m_alive.clear();
+
+    for (auto& mat : m_materials) mat->Shutdown();
+    m_materials.clear();
+    m_materialRegistry.clear();
+
     for (auto& mesh : m_meshes) mesh->Shutdown();
     m_meshes.clear();
     m_meshRegistry.clear();
+
     Logger::Info("Scene shutdown");
 }
 
@@ -35,6 +43,7 @@ ObjectHandle Scene::AddObject(
     SceneObject obj;
     obj.transform = transform;
     obj.mesh = mesh;
+    obj.material = nullptr;
     obj.name = name;
 
     ObjectHandle handle{ m_nextId++ };
@@ -45,22 +54,35 @@ ObjectHandle Scene::AddObject(
     return handle;
 }
 
-ObjectHandle Scene::AddObject(const std::string& meshName, const Transform& transform)
+ObjectHandle Scene::AddObject(const std::string& meshName,
+    const Transform& transform,
+    const std::string& materialName)
 {
     auto it = m_meshRegistry.find(meshName);
     if (it == m_meshRegistry.end())
         throw std::runtime_error("Mesh not found in scene: " + meshName);
 
+    Material* mat = nullptr;
+    if (!materialName.empty())
+    {
+        auto mit = m_materialRegistry.find(materialName);
+        if (mit == m_materialRegistry.end())
+            throw std::runtime_error("Material not found in scene: " + materialName);
+        mat = mit->second;
+    }
+
     SceneObject obj;
     obj.transform = transform;
     obj.mesh = it->second;
+    obj.material = mat;
     obj.name = meshName;
 
     ObjectHandle handle{ m_nextId++ };
     m_objects.push_back(obj);
     m_alive.push_back(true);
 
-    Logger::Info("Object added (reused mesh): '", meshName, "'");
+    Logger::Info("Object added: '", meshName, "' material: '",
+        materialName.empty() ? "none" : materialName, "'");
     return handle;
 }
 
@@ -90,15 +112,44 @@ bool Scene::HasObject(ObjectHandle handle) const
     return handle.IsValid() && handle.id < m_alive.size() && m_alive[handle.id];
 }
 
+void Scene::LoadMesh(const std::filesystem::path& path, const std::string& name)
+{
+    if (m_meshRegistry.count(name))
+    {
+        Logger::Warn("Scene::LoadMesh — mesh already registered: '", name, "', skipping.");
+        return;
+    }
+    auto data = MeshLoader::Load(path);
+    GetOrCreateMesh(data.vertices, data.indices, name);
+}
+
+void Scene::LoadMaterial(const std::string& name, const MaterialDesc& desc)
+{
+    if (m_materialRegistry.count(name))
+    {
+        Logger::Warn("Scene::LoadMaterial — material already registered: '", name, "', skipping.");
+        return;
+    }
+
+    auto mat = std::make_unique<Material>();
+    mat->Init(*m_device, *m_cmdManager,
+        m_descMgr->GetMaterialPool(),
+        m_descMgr->GetMaterialLayout(),
+        desc);
+
+    Material* ptr = mat.get();
+    m_materials.push_back(std::move(mat));
+    m_materialRegistry[name] = ptr;
+
+    Logger::Info("Material loaded: '", name, "'");
+}
+
 void Scene::Update(float deltaTime)
 {
     m_camera.Update(deltaTime);
 }
 
-void Scene::FixedUpdate(float deltaTime)
-{
-    // physics / collision
-}
+void Scene::FixedUpdate(float deltaTime) {}
 
 RenderList Scene::BuildRenderList() const
 {
@@ -107,7 +158,6 @@ RenderList Scene::BuildRenderList() const
     list.proj = m_camera.GetProj();
     list.cameraPos = m_camera.GetPosition();
 
-    // Copy scene light settings into the render list
     list.lightDir = lightDir;
     list.lightColor = lightColor;
     list.ambientStrength = ambientStrength;
@@ -123,22 +173,11 @@ RenderList Scene::BuildRenderList() const
         DrawCall dc;
         dc.transform = obj.transform.GetMatrix();
         dc.mesh = obj.mesh;
+        dc.material = obj.material;
         list.Add(dc);
     }
 
     return list;
-}
-
-void Scene::LoadMesh(const std::filesystem::path& path, const std::string& name)
-{
-    if (m_meshRegistry.count(name))
-    {
-        Logger::Warn("Scene::LoadMesh — mesh already registered: '", name, "', skipping.");
-        return;
-    }
-
-    auto data = MeshLoader::Load(path);
-    GetOrCreateMesh(data.vertices, data.indices, name);
 }
 
 Mesh* Scene::GetOrCreateMesh(
@@ -149,8 +188,7 @@ Mesh* Scene::GetOrCreateMesh(
     if (!name.empty())
     {
         auto it = m_meshRegistry.find(name);
-        if (it != m_meshRegistry.end())
-            return it->second;
+        if (it != m_meshRegistry.end()) return it->second;
     }
 
     auto mesh = std::make_unique<Mesh>();
@@ -158,8 +196,7 @@ Mesh* Scene::GetOrCreateMesh(
     Mesh* ptr = mesh.get();
     m_meshes.push_back(std::move(mesh));
 
-    if (!name.empty())
-        m_meshRegistry[name] = ptr;
+    if (!name.empty()) m_meshRegistry[name] = ptr;
 
     return ptr;
 }

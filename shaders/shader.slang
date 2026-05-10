@@ -1,106 +1,134 @@
-// shader.slang — Blinn-Phong directional light
-// Compiled to shader.vert.spv (vertMain) and shader.frag.spv (fragMain)
+// shader.slang
+// Blinn-Phong with diffuse, specular, gloss, and normal maps
+// set 0 binding 0  — FrameData UBO  (per-frame)
+// set 1 binding 0  — diffuse   sampler2D
+// set 1 binding 1  — specular  sampler2D
+// set 1 binding 2  — gloss     sampler2D
+// set 1 binding 3  — normal    sampler2D
+// push constant    — ObjectData (model + normal matrix columns, 112 bytes)
 
-// ── Uniform buffer — set 0, binding 0 ────────────────────────────────────────
+// ── Uniform data ─────────────────────────────────────────────────────────────
+
 struct FrameData
 {
     float4x4 view;
     float4x4 proj;
 
-    float4 lightDir;    // xyz = world-space direction toward light, w = unused
-    float4 lightColor;  // xyz = RGB, w = unused
-    float4 cameraPos;   // xyz = world-space camera position, w = unused
+    float4 lightDir;      // xyz = direction toward light (world space, normalised)
+    float4 lightColor;    // xyz = RGB
+    float4 cameraPos;     // xyz = world position
 
     // x = ambientStrength, y = specularStrength, z = shininess, w = unused
     float4 lightParams;
 };
 
-[[vk::binding(0, 0)]]
-ConstantBuffer<FrameData> frameData;
-
-// ── Push constant — per draw call ─────────────────────────────────────────────
 struct ObjectData
 {
     float4x4 model;
 
-    // Normal matrix (inverse-transpose of model upper-left 3x3)
-    // Packed as 3x float4 — we only use .xyz of each
-    float4 normalRow0;
-    float4 normalRow1;
-    float4 normalRow2;
+    // Normal matrix (inverse-transpose of model's mat3) stored as 3 columns.
+    // Each vec4 is one column of the mat3; shader reads .xyz.
+    float4 normalCol0;
+    float4 normalCol1;
+    float4 normalCol2;
 };
 
-[[vk::push_constant]]
-ConstantBuffer<ObjectData> objectData;
+[[vk::binding(0, 0)]] ConstantBuffer<FrameData> frameData;
+[[vk::push_constant]] ConstantBuffer<ObjectData> objectData;
 
-// ── Vertex input ──────────────────────────────────────────────────────────────
-struct VertexInput
+// Material textures — set 1
+[[vk::binding(0, 1)]] Sampler2D texDiffuse;
+[[vk::binding(1, 1)]] Sampler2D texSpecular;
+[[vk::binding(2, 1)]] Sampler2D texGloss;
+[[vk::binding(3, 1)]] Sampler2D texNormal;
+
+// ── Vertex stage ──────────────────────────────────────────────────────────────
+
+struct VSInput
 {
-    [[vk::location(0)]] float3 position : POSITION;
-    [[vk::location(1)]] float3 color    : COLOR;
-    [[vk::location(2)]] float3 normal   : NORMAL;
-    [[vk::location(3)]] float2 texCoord : TEXCOORD;
+    float3 position : POSITION;    // location 0
+    float3 color    : COLOR;       // location 1
+    float3 normal   : NORMAL;      // location 2
+    float2 texCoord : TEXCOORD0;   // location 3
+    float3 tangent  : TANGENT;     // location 4
 };
 
-// ── Vertex -  Fragment ─────────────────────────────────────────────────────────
-struct VertexOutput
+struct VSOutput
 {
-    float4 position  : SV_Position;
-    float3 color     : COLOR;
-    float3 worldPos  : TEXCOORD0;   // world-space position for specular
-    float3 worldNorm : TEXCOORD1;   // world-space normal
+    float4 sv_position : SV_Position;
+    float3 worldPos    : TEXCOORD0;
+    float3 worldNormal : TEXCOORD1;
+    float3 worldTangent: TEXCOORD2;
+    float2 uv          : TEXCOORD3;
+    float3 color       : TEXCOORD4;
 };
 
-// ── Vertex shader ─────────────────────────────────────────────────────────────
 [shader("vertex")]
-VertexOutput vertMain(VertexInput input)
+VSOutput vertMain(VSInput input)
 {
-    // Reconstruct the normal matrix from packed rows
-    float3x3 normalMatrix = float3x3(
-        objectData.normalRow0.xyz,
-        objectData.normalRow1.xyz,
-        objectData.normalRow2.xyz
-    );
+    VSOutput output;
 
-    float4 worldPos4 = mul(objectData.model, float4(input.position, 1.0));
+    // Reconstruct normal matrix from pushed columns.
+    // float3x3(col0, col1, col2) — Slang/HLSL float3x3 constructor takes rows,
+    // so we transpose after construction to get the correct column-major matrix.
+    float3x3 normalMatrix = transpose(float3x3(
+        objectData.normalCol0.xyz,
+        objectData.normalCol1.xyz,
+        objectData.normalCol2.xyz
+    ));
 
-    VertexOutput output;
-    output.position  = mul(frameData.proj, mul(frameData.view, worldPos4));
-    output.color     = input.color;
-    output.worldPos  = worldPos4.xyz;
-    //transform normal to world space — normalMatrix handles non-uniform scale
-    output.worldNorm = normalize(mul(normalMatrix, input.normal));
+    float4 worldPos = mul(objectData.model, float4(input.position, 1.0));
+
+    output.sv_position  = mul(frameData.proj, mul(frameData.view, worldPos));
+    output.worldPos     = worldPos.xyz;
+    output.worldNormal  = normalize(mul(normalMatrix, input.normal));
+    output.worldTangent = normalize(mul(normalMatrix, input.tangent));
+    output.uv           = input.texCoord;
+    output.color        = input.color;
 
     return output;
 }
 
-// ── Fragment shader — Blinn-Phong ─────────────────────────────────────────────
+// ── Fragment stage ────────────────────────────────────────────────────────────
+
 [shader("fragment")]
-float4 fragMain(VertexOutput input) : SV_Target
+float4 fragMain(VSOutput input) : SV_Target
 {
-    float3 N = normalize(input.worldNorm);
-    float3 L = normalize(frameData.lightDir.xyz);   // toward light
+    // ── Normal mapping ───────────────────────────────────────────────────────
+    float3 N = normalize(input.worldNormal);
+    float3 T = normalize(input.worldTangent);
+    T = normalize(T - dot(T, N) * N);   // re-orthogonalise (Gram-Schmidt)
+    float3 B = cross(N, T);
+    float3x3 TBN = transpose(float3x3(T, B, N));   // tangent-space → world
+
+    // Sample normal map, remap [0,1] → [-1,1], transform to world space
+    float3 sampledNormal = texNormal.Sample(input.uv).xyz * 2.0 - 1.0;
+    float3 worldN = normalize(mul(TBN, sampledNormal));
+
+    // ── Sample material textures ─────────────────────────────────────────────
+    float3 diffuseColor = texDiffuse.Sample(input.uv).rgb * input.color;
+    float  specularMask = texSpecular.Sample(input.uv).r;
+    float  glossValue   = texGloss.Sample(input.uv).r;
+
+    // Remap gloss (0–1) to shininess exponent (4–256)
+    float shininess = lerp(4.0, 256.0, glossValue);
+
+    // ── Blinn-Phong ──────────────────────────────────────────────────────────
+    float3 L = normalize(frameData.lightDir.xyz);
     float3 V = normalize(frameData.cameraPos.xyz - input.worldPos);
-    float3 H = normalize(L + V);                    // half-vector
+    float3 H = normalize(L + V);
 
-    float ambientStr  = frameData.lightParams.x;
-    float specularStr = frameData.lightParams.y;
-    float shininess   = frameData.lightParams.z;
+    float  ambientStr  = frameData.lightParams.x;
+    float  specularStr = frameData.lightParams.y;
+    float3 lightRGB    = frameData.lightColor.xyz;
 
-    float3 lightCol = frameData.lightColor.xyz;
-    float3 baseCol  = input.color;
+    float3 ambient = ambientStr * diffuseColor * lightRGB;
 
-    // Ambient
-    float3 ambient = ambientStr * lightCol * baseCol;
+    float NdotL = max(dot(worldN, L), 0.0);
+    float3 diffuse = NdotL * diffuseColor * lightRGB;
 
-    // Diffuse — Lambert
-    float diff = max(dot(N, L), 0.0);
-    float3 diffuse = diff * lightCol * baseCol;
+    float NdotH = max(dot(worldN, H), 0.0);
+    float3 specular = specularStr * specularMask * pow(NdotH, shininess) * lightRGB;
 
-    // Specular — Blinn-Phong
-    float spec = pow(max(dot(N, H), 0.0), shininess);
-    float3 specular = specularStr * spec * lightCol;  // specular highlight uses light color only
-
-    float3 result = ambient + diffuse + specular;
-    return float4(result, 1.0);
+    return float4(ambient + diffuse + specular, 1.0);
 }

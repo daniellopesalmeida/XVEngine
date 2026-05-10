@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include "Vertex.h"
 #include <renderer/Mesh.h>
+#include <renderer/Material.h>
 #include <glm/gtc/matrix_inverse.hpp>
 
 void Renderer::Init(Window& window)
@@ -17,6 +18,7 @@ void Renderer::Init(Window& window)
     m_descriptorManager.Init(m_device, m_commandManager);
     CreateDepthImage();
     CreatePipeline();
+    CreateDefaultMaterial();
 
     m_initialized = true;
     Logger::Info("Renderer initialized");
@@ -64,9 +66,29 @@ void Renderer::CreatePipeline()
     config.vertexAttributes = { attrs.begin(), attrs.end() };
     config.pushConstantSize = sizeof(ObjectData);
     config.pushConstantStages = vk::ShaderStageFlagBits::eVertex;
-    config.descriptorSetLayouts = { m_descriptorManager.GetLayout() };
+
+    // Both set layouts: set 0 = frame UBO, set 1 = material textures
+    config.descriptorSetLayouts = {
+        m_descriptorManager.GetFrameLayout(),
+        m_descriptorManager.GetMaterialLayout()
+    };
 
     m_pipeline.Init(m_device, config);
+}
+
+void Renderer::CreateDefaultMaterial()
+{
+    // All slots empty — Material::Init fills each with its 1x1 fallback texture.
+    // This ensures every draw call always has a valid set 1 bound, even for
+    // objects like the debug cube that have no material assigned.
+    m_defaultMaterial = std::make_unique<Material>();
+    m_defaultMaterial->Init(
+        m_device, m_commandManager,
+        m_descriptorManager.GetMaterialPool(),
+        m_descriptorManager.GetMaterialLayout(),
+        MaterialDesc{});   // all paths empty → white diffuse, grey spec/gloss, flat normal
+
+    Logger::Info("Default material created");
 }
 
 void Renderer::RecreateSwapchain()
@@ -75,22 +97,18 @@ void Renderer::RecreateSwapchain()
         glfwWaitEvents();
 
     WaitIdle();
-
     m_swapchain.Recreate(m_device, m_surface, *m_window);
-
     m_depthImage.Shutdown();
     CreateDepthImage();
-
     m_commandManager.RecreateSyncObjects(m_device, m_swapchain);
-
     m_needsResize = false;
+
     Logger::Info("Swapchain recreated: ",
         m_swapchain.GetExtent().width, "x", m_swapchain.GetExtent().height);
 }
 
 bool Renderer::BeginFrame(const RenderList& list)
 {
-    //react to a pending resize before doing anything with the swapchain
     if (m_needsResize || m_window->WasResized())
     {
         m_window->ClearResized();
@@ -101,31 +119,26 @@ bool Renderer::BeginFrame(const RenderList& list)
     auto& fence = m_commandManager.GetInFlightFence(m_currentFrame);
     auto& cmd = m_commandManager.GetCommandBuffer(m_currentFrame);
 
-    if (m_device.GetDevice().waitForFences(*fence, true, std::numeric_limits<uint64_t>::max()) != vk::Result::eSuccess)
+    if (m_device.GetDevice().waitForFences(*fence, true, std::numeric_limits<uint64_t>::max())
+        != vk::Result::eSuccess)
         throw std::runtime_error("waitForFences failed");
 
-    //acquire swapchain image
     auto [result, imageIndex] = m_swapchain.GetSwapchain().acquireNextImage(
         std::numeric_limits<uint64_t>::max(),
         *m_commandManager.GetPresentCompleteSemaphore(m_currentFrame),
         nullptr);
 
-    if (result == vk::Result::eErrorOutOfDateKHR)
-    {
-        RecreateSwapchain();
-        return false;
-    }
+    if (result == vk::Result::eErrorOutOfDateKHR) { RecreateSwapchain(); return false; }
 
     m_imageIndex = imageIndex;
     m_device.GetDevice().resetFences(*fence);
 
-    //begin command buffer
     cmd.reset();
     vk::CommandBufferBeginInfo beginInfo{};
     beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
     cmd.begin(beginInfo);
 
-    //swapchain image to color attachment
+    // Swapchain image → color attachment
     vk::ImageMemoryBarrier2 barrier{};
     barrier.image = m_swapchain.GetImages()[m_imageIndex];
     barrier.oldLayout = vk::ImageLayout::eUndefined;
@@ -143,7 +156,6 @@ bool Renderer::BeginFrame(const RenderList& list)
     depInfo.pImageMemoryBarriers = &barrier;
     cmd.pipelineBarrier2(depInfo);
 
-    //begin dynamic rendering
     vk::RenderingAttachmentInfo colorAttachment{};
     colorAttachment.imageView = *m_swapchain.GetImageViews()[m_imageIndex];
     colorAttachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
@@ -166,11 +178,9 @@ bool Renderer::BeginFrame(const RenderList& list)
     renderingInfo.pDepthAttachment = &depthAttachment;
 
     cmd.beginRendering(renderingInfo);
-
-    //pipeline and set dynamic viewport/scissor
     m_pipeline.Bind(cmd);
 
-    //fill FrameData UBO with camera + lighting
+    // Fill FrameData UBO
     FrameData frameData{};
     frameData.view = list.view;
     frameData.proj = list.proj;
@@ -185,11 +195,12 @@ bool Renderer::BeginFrame(const RenderList& list)
 
     m_descriptorManager.UpdateFrameData(m_currentFrame, frameData);
 
+    // Bind set 0 (frame UBO) — stays bound for the whole frame
     cmd.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         *m_pipeline.GetPipelineLayout(),
-        0,
-        *m_descriptorManager.GetDescriptorSet(m_currentFrame),
+        0,                      // firstSet
+        *m_descriptorManager.GetFrameSet(m_currentFrame),
         nullptr);
 
     vk::Viewport viewport{};
@@ -213,16 +224,20 @@ void Renderer::DrawFrame(const RenderList& list)
 
     for (const auto& dc : list.drawCalls)
     {
-        //compute normal matrix CPU-side (inverse-transpose)
-        //correctly handles non-uniform scaling without distorting normals
-        glm::mat3 normalMat = glm::inverseTranspose(glm::mat3(dc.transform));
+        // Bind set 1 — use object's material or fall back to default
+        Material* mat = dc.material ? dc.material : m_defaultMaterial.get();
+        mat->Bind(cmd, *m_pipeline.GetPipelineLayout(), 1);
 
         ObjectData pc{};
         pc.model = dc.transform;
-        //pack mat3 into 3x vec4 (shader reads .xyz of each)
-        pc.normalRow0 = glm::vec4(normalMat[0], 0.f);  // column 0 of mat3
-        pc.normalRow1 = glm::vec4(normalMat[1], 0.f);  // column 1
-        pc.normalRow2 = glm::vec4(normalMat[2], 0.f);  // column 2
+
+        // Normal matrix = inverse-transpose of the upper-left 3x3 of model.
+        // GLM mat3(mat4) extracts the upper-left 3x3. inverseTranspose does both ops.
+        // mat[i] in GLM = column i — so we push columns, shader reconstructs columns.
+        glm::mat3 nm = glm::inverseTranspose(glm::mat3(dc.transform));
+        pc.normalCol0 = glm::vec4(nm[0], 0.f);   // column 0
+        pc.normalCol1 = glm::vec4(nm[1], 0.f);   // column 1
+        pc.normalCol2 = glm::vec4(nm[2], 0.f);   // column 2
 
         cmd.pushConstants<ObjectData>(
             *m_pipeline.GetPipelineLayout(),
@@ -242,7 +257,6 @@ void Renderer::EndFrame()
 
     cmd.endRendering();
 
-    //color attachment 
     vk::ImageMemoryBarrier2 barrier{};
     barrier.image = m_swapchain.GetImages()[m_imageIndex];
     barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
@@ -260,10 +274,8 @@ void Renderer::EndFrame()
     depInfo.pImageMemoryBarriers = &barrier;
     cmd.pipelineBarrier2(depInfo);
 
-    //Logger::Info("EndFrame: submitting");
     cmd.end();
 
-    //submit
     vk::SemaphoreSubmitInfo waitSemInfo{};
     waitSemInfo.semaphore = *m_commandManager.GetPresentCompleteSemaphore(m_currentFrame);
     waitSemInfo.stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
@@ -285,7 +297,6 @@ void Renderer::EndFrame()
 
     m_device.GetQueue().submit2(submitInfo, *fence);
 
-    // Present
     vk::PresentInfoKHR presentInfo{};
     presentInfo.waitSemaphoreCount = 1;
     presentInfo.pWaitSemaphores = &*m_commandManager.GetRenderFinishedSemaphore(m_imageIndex);
@@ -303,8 +314,9 @@ void Renderer::EndFrame()
 void Renderer::Shutdown()
 {
     if (!m_initialized) return;
-
     WaitIdle();
+    m_defaultMaterial->Shutdown();
+    m_defaultMaterial.reset();
     m_pipeline.Shutdown();
     m_depthImage.Shutdown();
     m_descriptorManager.Shutdown();

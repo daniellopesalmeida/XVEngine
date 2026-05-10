@@ -5,28 +5,51 @@
 #include <renderer/FrameData.h>
 #include <renderer/CommandManager.h>
 
-//owns descriptor infrastructure for per-frame UBO data (set 0).
-//one UBO + one descriptor set per frame in flight.
+// Owns descriptor infrastructure for two descriptor set layouts:
+//
+//   set 0 — per-frame UBO (FrameData: view/proj/lights)
+//            one UBO + one DescriptorSet per frame in flight
+//
+//   set 1 — per-material textures (diffuse/specular/gloss/normal)
+//            layout shared across all materials
+//            pool shared — Material::Init allocates individual sets from it
+
 class DescriptorManager
 {
 public:
     void Init(Device& device, CommandManager& cmdManager);
     void Shutdown();
 
-    //write view/proj into the UBO for this frame
+    // Write view/proj/light data into the per-frame UBO
     void UpdateFrameData(uint32_t frameIndex, const FrameData& data);
 
-    vk::DescriptorSetLayout GetLayout() const { return *m_layout; }
-    vk::raii::DescriptorSet& GetDescriptorSet(uint32_t frameIndex) { return m_sets[frameIndex]; }
+    // set 0
+    vk::DescriptorSetLayout      GetFrameLayout()    const { return *m_frameLayout; }
+    vk::raii::DescriptorSet& GetFrameSet(uint32_t frameIndex) { return m_frameSets[frameIndex]; }
+
+    // set 1 — layout and pool handed to Material::Init
+    vk::DescriptorSetLayout      GetMaterialLayout() const { return *m_materialLayout; }
+    vk::DescriptorPool           GetMaterialPool()   const { return *m_materialPool; }
 
 private:
-    vk::raii::DescriptorSetLayout m_layout = nullptr;
-    vk::raii::DescriptorPool m_pool = nullptr;
-    std::vector<vk::raii::DescriptorSet> m_sets;
-    std::vector<Buffer> m_ubos;  //one per frame in flight
+    // set 0 — per-frame
+    vk::raii::DescriptorSetLayout        m_frameLayout = nullptr;
+    vk::raii::DescriptorPool             m_framePool = nullptr;
+    std::vector<vk::raii::DescriptorSet> m_frameSets;
+    std::vector<Buffer>                  m_ubos;
 
-    void CreateLayout(Device& device);
-    void CreatePool(Device& device);
+    // set 1 — per-material (layout + shared pool; sets owned by Material)
+    vk::raii::DescriptorSetLayout        m_materialLayout = nullptr;
+    vk::raii::DescriptorPool             m_materialPool = nullptr;
+
+    void CreateFrameLayout(Device& device);
+    void CreateFramePool(Device& device);
     void CreateUBOs(Device& device);
-    void CreateSets(Device& device);
+    void CreateFrameSets(Device& device);
+
+    void CreateMaterialLayout(Device& device);
+    void CreateMaterialPool(Device& device);
+
+    // Legacy name kept so callers that haven't updated yet still compile
+    vk::DescriptorSetLayout GetLayout() const { return GetFrameLayout(); }
 };

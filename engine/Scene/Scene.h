@@ -7,6 +7,7 @@
 #include <renderer/CommandManager.h>
 #include <renderer/Mesh.h>
 #include <renderer/Vertex.h>
+#include <renderer/Material.h>
 #include <memory>
 #include <vector>
 #include <string>
@@ -14,45 +15,48 @@
 #include <filesystem>
 #include <core/Transform.h>
 
+class DescriptorManager;
+
 class Scene
 {
 public:
-    void Init(Device& device, CommandManager& cmdManager, float aspect);
+    void Init(Device& device, CommandManager& cmdManager,
+        DescriptorManager& descriptorManager, float aspect);
     void Shutdown();
 
-    //Add an object from raw geometry
+    // Add an object from raw geometry (no material)
     ObjectHandle AddObject(
         const std::vector<Vertex>& vertices,
         const std::vector<uint32_t>& indices,
         const Transform& transform = {},
         const std::string& name = "");
 
-    //Add an object reusing an already-registered mesh by name
-    ObjectHandle AddObject(const std::string& meshName, const Transform& transform = {});
+    // Add an object reusing an already-registered mesh, optionally with a named material
+    ObjectHandle AddObject(const std::string& meshName,
+        const Transform& transform = {},
+        const std::string& materialName = "");
 
-    //load a mesh from an .obj file and register it under 'name'
-    //use AddObject(name, transform) to place instances
+    // Load a mesh from an .obj file and register it under 'name'
     void LoadMesh(const std::filesystem::path& path, const std::string& name);
+
+    // Load a material from a MaterialDesc and register it under 'name'
+    void LoadMaterial(const std::string& name, const MaterialDesc& desc);
 
     void RemoveObject(ObjectHandle handle);
 
-    //object access
     SceneObject& GetObject(ObjectHandle handle);
     const SceneObject& GetObject(ObjectHandle handle) const;
-    bool HasObject(ObjectHandle handle) const;
+    bool               HasObject(ObjectHandle handle) const;
 
-    //camera
     Camera& GetCamera() { return m_camera; }
 
-    // Lighting — configure once in App::Load, overrideable per frame
-    // lightDir points TOWARD the light source (normalised before use)
-    glm::vec3 lightDir = glm::normalize(glm::vec3(-0.3f, -1.f, -0.5f));
+    // Lighting — configure once in App::Load
+    glm::vec3 lightDir = glm::vec3(0.f, -10.0f, -0.5f);
     glm::vec3 lightColor = { 1.f, 1.f, 1.f };
     float ambientStrength = 0.15f;
     float specularStrength = 0.5f;
     float shininess = 32.f;
 
-    // Called by Engine each frame
     void Update(float deltaTime);
     void FixedUpdate(float deltaTime);
 
@@ -61,14 +65,17 @@ public:
 private:
     Device* m_device = nullptr;
     CommandManager* m_cmdManager = nullptr;
+    DescriptorManager* m_descMgr = nullptr;
 
     Camera m_camera;
 
-    std::vector<SceneObject> m_objects;
-    std::vector<bool> m_alive;   // slot alive flags
-    std::vector<std::unique_ptr<Mesh>> m_meshes;  // scene owns meshes
-
+    std::vector<SceneObject>           m_objects;
+    std::vector<bool>                  m_alive;
+    std::vector<std::unique_ptr<Mesh>> m_meshes;
     std::unordered_map<std::string, Mesh*> m_meshRegistry;
+
+    std::vector<std::unique_ptr<Material>>     m_materials;
+    std::unordered_map<std::string, Material*> m_materialRegistry;
 
     uint32_t m_nextId = 0;
 

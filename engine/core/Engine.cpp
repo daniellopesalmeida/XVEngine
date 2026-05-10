@@ -8,14 +8,18 @@ void Engine::Init()
 {
     m_window.Init(800, 600, "XVEngine");
     m_renderer.Init(m_window);
-    m_sceneManager.Init(m_renderer.GetDevice(), m_renderer.GetCommandManager(), m_window.GetAspect());
+    m_sceneManager.Init(
+        m_renderer.GetDevice(),
+        m_renderer.GetCommandManager(),
+        m_renderer.GetDescriptorManager(),
+        m_window.GetAspect());
     RegisterWindowCallbacks();
     Logger::Info("Engine initialized");
 }
 
 void Engine::Run(const std::function<void()>& load)
 {
-    load();  // Game::Load() — scene setup before first frame
+    load();
 
     constexpr float fixedTimestep = 1.f / 60.f;
     constexpr int   targetFps = 60;
@@ -32,7 +36,6 @@ void Engine::Run(const std::function<void()>& load)
 
         m_window.PollEvents();
 
-        // Fixed update for physics later
         lag += deltaTime;
         while (lag >= fixedTimestep)
         {
@@ -41,11 +44,9 @@ void Engine::Run(const std::function<void()>& load)
             lag -= fixedTimestep;
         }
 
-        //update camera, gameplay
         m_sceneManager.Update(deltaTime);
         if (m_updateCb) m_updateCb(deltaTime);
 
-        //render
         if (m_sceneManager.HasActiveScene())
         {
             RenderList list = m_sceneManager.BuildRenderList();
@@ -56,7 +57,6 @@ void Engine::Run(const std::function<void()>& load)
             }
         }
 
-        //frame cap
         auto frameTime = std::chrono::steady_clock::now() - currentTime;
         if (frameTime < targetFrameTime)
             std::this_thread::sleep_for(targetFrameTime - frameTime);
@@ -66,7 +66,6 @@ void Engine::Run(const std::function<void()>& load)
 void Engine::Shutdown()
 {
     m_renderer.WaitIdle();
-
     m_sceneManager.Shutdown();
     m_renderer.Shutdown();
     m_window.Shutdown();
@@ -95,11 +94,9 @@ void Engine::RegisterWindowCallbacks()
 
     m_window.SetResizeCallback([this](uint32_t width, uint32_t height)
         {
-            if (height == 0) return;  //guard divideby zero when minimised
+            if (height == 0) return;
             float aspect = static_cast<float>(width) / static_cast<float>(height);
             if (auto* scene = m_sceneManager.GetActiveScene())
-            {
                 scene->GetCamera().SetAspect(aspect);
-            }
         });
 }

@@ -8,8 +8,10 @@
 #include <renderer/Image.h>
 #include <renderer/Pipeline.h>
 #include <renderer/ObjectData.h>
+#include <renderer/DescriptorManager.h>
+#include <renderer/Material.h>
 #include <scene/RenderList.h>
-#include "DescriptorManager.h"
+#include <memory>
 
 class Renderer
 {
@@ -24,30 +26,36 @@ public:
 
     Device& GetDevice() { return m_device; }
     CommandManager& GetCommandManager() { return m_commandManager; }
+    DescriptorManager& GetDescriptorManager() { return m_descriptorManager; }
 
     void WaitIdle();
 
 private:
     Window* m_window = nullptr;
-    bool m_initialized = false;
-    bool m_needsResize = false;
+    bool    m_initialized = false;
+    bool    m_needsResize = false;
     vk::PhysicalDeviceType m_preferredGPUType = vk::PhysicalDeviceType::eDiscreteGpu;
 
     uint32_t m_currentFrame = 0;
     uint32_t m_imageIndex = 0;
 
-    //destructio order— declare in init order, destroyed in reverse
-    Instance  m_instance;
+    // Declare in init order — destroyed in reverse
+    Instance             m_instance;
     vk::raii::SurfaceKHR m_surface = nullptr;
-    Device m_device;
-    Swapchain m_swapchain;
-    CommandManager m_commandManager;
-    DescriptorManager m_descriptorManager;
-    Image  m_depthImage;
-    Pipeline m_pipeline;
+    Device               m_device;
+    Swapchain            m_swapchain;
+    CommandManager       m_commandManager;
+    DescriptorManager    m_descriptorManager;
+    Image                m_depthImage;
+    Pipeline             m_pipeline;
+
+    // Fallback material — used when a draw call has no material assigned.
+    // All slots are 1x1 fallback textures (white diffuse, grey specular/gloss, flat normal).
+    std::unique_ptr<Material> m_defaultMaterial;
 
     void CreateSurface();
     void CreateDepthImage();
     void CreatePipeline();
+    void CreateDefaultMaterial();
     void RecreateSwapchain();
 };

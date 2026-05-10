@@ -21,4 +21,5 @@ private:
     void loadQuad(Scene* scene);
     void loadCube(Scene* scene);
     void loadObj(Scene* scene);
+    void loadGround(Scene* scene);
 };

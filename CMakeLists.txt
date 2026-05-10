@@ -30,6 +30,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tinyobjloader)
 
+# stb (stb_image.h — header-only)
+FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG master
+)
+FetchContent_MakeAvailable(stb)
+
 # Vulkan
 find_package(Vulkan REQUIRED)
 
@@ -64,8 +72,8 @@ add_custom_target(Shaders ALL DEPENDS ${SPV_FILES})
 file(GLOB_RECURSE SOURCES
     "main.cpp"
     "engine/**/*.cpp"
-    "app/*.cpp"       
-    "app/**/*.cpp"    
+    "app/*.cpp"
+    "app/**/*.cpp"
 )
 
 file(GLOB_RECURSE HEADERS
@@ -79,7 +87,6 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_SOURCE_DIR}/engine"
 )
 
-
 add_executable(XVEngine ${SOURCES} ${HEADERS})
 add_dependencies(XVEngine Shaders)
 
@@ -89,6 +96,7 @@ target_include_directories(XVEngine PRIVATE
     ${CMAKE_SOURCE_DIR}/app
     ${Vulkan_INCLUDE_DIRS}
     ${tinyobjloader_SOURCE_DIR}
+    ${stb_SOURCE_DIR}            # stb_image.h lives here
 )
 
 target_link_libraries(XVEngine PRIVATE
@@ -98,7 +106,7 @@ target_link_libraries(XVEngine PRIVATE
     tinyobjloader
 )
 
- #Copy shaders to output directory after build
+# Copy shaders to output directory after build
 add_custom_command(TARGET XVEngine POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_BINARY_DIR}/shaders"
@@ -106,13 +114,23 @@ add_custom_command(TARGET XVEngine POST_BUILD
     COMMENT "Copying shaders to output directory"
 )
 
-# Copy models/ to output directory (only if the folder exists)
+# Copy models/ to output directory
 if(EXISTS "${CMAKE_SOURCE_DIR}/models")
     add_custom_command(TARGET XVEngine POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_SOURCE_DIR}/models"
             "$<TARGET_FILE_DIR:XVEngine>/models"
         COMMENT "Copying models to output directory"
+    )
+endif()
+
+# Copy textures/ to output directory
+if(EXISTS "${CMAKE_SOURCE_DIR}/textures")
+    add_custom_command(TARGET XVEngine POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/textures"
+            "$<TARGET_FILE_DIR:XVEngine>/textures"
+        COMMENT "Copying textures to output directory"
     )
 endif()
 

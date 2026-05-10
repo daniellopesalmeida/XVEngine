@@ -4,18 +4,19 @@
 
 struct DrawCall
 {
-    glm::mat4 transform;  //model matrix
-    struct Mesh* mesh;    //non-owning
+    glm::mat4        transform;   // model matrix
+    struct Mesh* mesh;        // non-owning
+    struct Material* material;    // non-owning — nullptr = use default/no-texture pipeline
 };
 
 struct RenderList
 {
-    //camera — filled by Scene::BuildRenderList
+    // Camera — filled by Scene::BuildRenderList
     glm::mat4 view;
     glm::mat4 proj;
     glm::vec3 cameraPos;
 
-    //directional light — set by App before BuildRenderList
+    // Directional light — set by App before BuildRenderList
     glm::vec3 lightDir = glm::normalize(glm::vec3(0.f, -1.f, -0.5f));
     glm::vec3 lightColor = { 1.f, 1.f, 1.f };
     float ambientStrength = 0.15f;

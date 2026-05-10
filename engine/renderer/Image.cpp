@@ -7,7 +7,7 @@ void Image::Init(Device& device, CommandManager& cmdManager, const ImageConfig& 
     m_format = config.format;
     m_aspectMask = config.aspectMask;
     m_extent.width = config.width;
-    m_extent.height =  config.height;
+    m_extent.height = config.height;
     m_mipLevels = config.mipLevels;
 
     CreateImage(device, config);
@@ -89,7 +89,6 @@ void Image::TransitionLayout(Device& device, CommandManager& cmdManager,
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
 
-    //access masks and stages from layouts
     auto [srcStage, srcAccess, dstStage, dstAccess] = [&]()
         -> std::tuple<vk::PipelineStageFlags2, vk::AccessFlags2,
         vk::PipelineStageFlags2, vk::AccessFlags2>
@@ -97,6 +96,7 @@ void Image::TransitionLayout(Device& device, CommandManager& cmdManager,
             using PS = vk::PipelineStageFlagBits2;
             using AC = vk::AccessFlagBits2;
 
+            // Render targets
             if (oldLayout == vk::ImageLayout::eUndefined &&
                 newLayout == vk::ImageLayout::eColorAttachmentOptimal)
                 return { PS::eTopOfPipe,     AC::eNone,
@@ -117,6 +117,18 @@ void Image::TransitionLayout(Device& device, CommandManager& cmdManager,
                 newLayout == vk::ImageLayout::eShaderReadOnlyOptimal)
                 return { PS::eColorAttachmentOutput, AC::eColorAttachmentWrite,
                          PS::eFragmentShader,          AC::eShaderRead };
+
+            // Texture upload — staging buffer copy into image
+            if (oldLayout == vk::ImageLayout::eUndefined &&
+                newLayout == vk::ImageLayout::eTransferDstOptimal)
+                return { PS::eTopOfPipe,  AC::eNone,
+                         PS::eTransfer,   AC::eTransferWrite };
+
+            // Texture upload — image ready for shader sampling
+            if (oldLayout == vk::ImageLayout::eTransferDstOptimal &&
+                newLayout == vk::ImageLayout::eShaderReadOnlyOptimal)
+                return { PS::eTransfer,      AC::eTransferWrite,
+                         PS::eFragmentShader, AC::eShaderRead };
 
             // General fallback
             return { PS::eAllCommands, AC::eMemoryWrite,

@@ -2,10 +2,12 @@
 #include <utils/Logger.h>
 #include <stdexcept>
 
-void SceneManager::Init(Device& device, CommandManager& cmdManager, float aspect)
+void SceneManager::Init(Device& device, CommandManager& cmdManager,
+    DescriptorManager& descriptorManager, float aspect)
 {
     m_device = &device;
     m_cmdManager = &cmdManager;
+    m_descMgr = &descriptorManager;
     m_aspect = aspect;
     Logger::Info("SceneManager initialized");
 }
@@ -25,7 +27,7 @@ Scene* SceneManager::AddScene(const std::string& name)
         throw std::runtime_error("Scene already exists: " + name);
 
     auto scene = std::make_unique<Scene>();
-    scene->Init(*m_device, *m_cmdManager,m_aspect);
+    scene->Init(*m_device, *m_cmdManager, *m_descMgr, m_aspect);
     Scene* ptr = scene.get();
     m_scenes[name] = std::move(scene);
 
@@ -40,7 +42,6 @@ void SceneManager::LoadScene(const std::string& name)
         throw std::runtime_error("Scene not found: " + name);
 
     UnloadCurrent();
-
     m_activeScene = it->second.get();
     m_activeSceneName = name;
     Logger::Info("Scene loaded: ", name);
@@ -57,8 +58,7 @@ void SceneManager::UnloadCurrent()
 Scene* SceneManager::GetScene(const std::string& name)
 {
     auto it = m_scenes.find(name);
-    if (it == m_scenes.end()) return nullptr;
-    return it->second.get();
+    return it == m_scenes.end() ? nullptr : it->second.get();
 }
 
 void SceneManager::Update(float deltaTime)
