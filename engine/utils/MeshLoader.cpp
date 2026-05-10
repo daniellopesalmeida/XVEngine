@@ -28,16 +28,20 @@ struct ObjIndexEq
 };
 
 // Compute per-vertex tangents using the standard UV-edge method.
-// For each triangle (i0,i1,i2) we solve the 2x2 system:
+//
+// For each triangle we solve the 2x2 system:
 //   [edge1, edge2] = [deltaUV1, deltaUV2] * [T, B]
-// and accumulate the tangent T into each vertex.
-// After all triangles are processed, each tangent is orthogonalised
-// against its vertex normal via Gram-Schmidt and normalised.
+// giving us both the tangent T and bitangent B for that triangle.
+// We accumulate both into per-vertex sums, then at the end:
+//   1. Gram-Schmidt orthogonalise T against N.
+//   2. Compute handedness sign = sign(dot(cross(N,T), B)).
+//   3. Store (T.xyz, sign) in tangent.w so the shader can reconstruct B
+//      correctly even for mirrored UV islands.
 static void ComputeTangents(std::vector<Vertex>& verts,
     const std::vector<uint32_t>& indices)
 {
-    // Accumulate raw tangents (un-normalised, summed across shared triangles)
-    std::vector<glm::vec3> accum(verts.size(), glm::vec3(0.f));
+    std::vector<glm::vec3> accumT(verts.size(), glm::vec3(0.f));
+    std::vector<glm::vec3> accumB(verts.size(), glm::vec3(0.f));
 
     for (size_t i = 0; i + 2 < indices.size(); i += 3)
     {
@@ -55,7 +59,6 @@ static void ComputeTangents(std::vector<Vertex>& verts,
 
         glm::vec3 edge1 = p1 - p0;
         glm::vec3 edge2 = p2 - p0;
-
         glm::vec2 dUV1 = uv1 - uv0;
         glm::vec2 dUV2 = uv2 - uv0;
 
@@ -63,29 +66,35 @@ static void ComputeTangents(std::vector<Vertex>& verts,
         if (std::abs(denom) < 1e-8f) continue;  // degenerate UV triangle
 
         float inv = 1.f / denom;
-        glm::vec3 tangent = inv * (dUV2.y * edge1 - dUV1.y * edge2);
+        glm::vec3 T = inv * (dUV2.y * edge1 - dUV1.y * edge2);
+        glm::vec3 B = inv * (-dUV2.x * edge1 + dUV1.x * edge2);
 
-        accum[i0] += tangent;
-        accum[i1] += tangent;
-        accum[i2] += tangent;
+        accumT[i0] += T;  accumT[i1] += T;  accumT[i2] += T;
+        accumB[i0] += B;  accumB[i1] += B;  accumB[i2] += B;
     }
 
-    // Gram-Schmidt orthogonalise each tangent against its vertex normal
     for (size_t i = 0; i < verts.size(); i++)
     {
         const glm::vec3& n = verts[i].normal;
-        const glm::vec3& t = accum[i];
+        const glm::vec3& t = accumT[i];
+        const glm::vec3& b = accumB[i];
 
         if (glm::length(t) < 1e-8f)
         {
-            // Vertex has no UV coverage — generate an arbitrary perpendicular
+            // No UV coverage — generate an arbitrary perpendicular, handedness +1
             glm::vec3 up = std::abs(n.y) < 0.99f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
-            verts[i].tangent = glm::normalize(glm::cross(up, n));
+            glm::vec3 tDir = glm::normalize(glm::cross(up, n));
+            verts[i].tangent = glm::vec4(tDir, 1.f);
             continue;
         }
 
-        // T' = normalize(T - dot(T,N)*N)
-        verts[i].tangent = glm::normalize(t - glm::dot(t, n) * n);
+        // Gram-Schmidt orthogonalise T against N
+        glm::vec3 tOrtho = glm::normalize(t - glm::dot(t, n) * n);
+
+        // Handedness: if cross(N,T)·B < 0, UV space is mirrored — flip bitangent
+        float sign = (glm::dot(glm::cross(n, tOrtho), b) < 0.f) ? -1.f : 1.f;
+
+        verts[i].tangent = glm::vec4(tOrtho, sign);
     }
 }
 
@@ -147,8 +156,8 @@ MeshLoader::MeshData MeshLoader::Load(const std::filesystem::path& path)
                 };
             }
 
-            v.color = { 1.f, 1.f, 1.f };   // default white; material diffuse takes over
-            v.tangent = { 0.f, 0.f, 0.f };   // filled in by ComputeTangents below
+            v.color = { 1.f, 1.f, 1.f };      // default white; material diffuse takes over
+            v.tangent = { 0.f, 0.f, 0.f, 1.f }; // filled in by ComputeTangents below
 
             if (result.vertices.size() >= UINT32_MAX)
                 Logger::Warn("MeshLoader: mesh exceeds uint32_t index limit: ", path.string());

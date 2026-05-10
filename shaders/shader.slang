@@ -50,7 +50,7 @@ struct VSInput
     float3 color    : COLOR;       // location 1
     float3 normal   : NORMAL;      // location 2
     float2 texCoord : TEXCOORD0;   // location 3
-    float3 tangent  : TANGENT;     // location 4
+    float4 tangent : TANGENT;     // location 4
 };
 
 struct VSOutput
@@ -58,7 +58,7 @@ struct VSOutput
     float4 sv_position : SV_Position;
     float3 worldPos    : TEXCOORD0;
     float3 worldNormal : TEXCOORD1;
-    float3 worldTangent: TEXCOORD2;
+    float4 worldTangent: TEXCOORD2;
     float2 uv          : TEXCOORD3;
     float3 color       : TEXCOORD4;
 };
@@ -68,9 +68,6 @@ VSOutput vertMain(VSInput input)
 {
     VSOutput output;
 
-    // Reconstruct normal matrix from pushed columns.
-    // float3x3(col0, col1, col2) — Slang/HLSL float3x3 constructor takes rows,
-    // so we transpose after construction to get the correct column-major matrix.
     float3x3 normalMatrix = transpose(float3x3(
         objectData.normalCol0.xyz,
         objectData.normalCol1.xyz,
@@ -82,7 +79,8 @@ VSOutput vertMain(VSInput input)
     output.sv_position  = mul(frameData.proj, mul(frameData.view, worldPos));
     output.worldPos     = worldPos.xyz;
     output.worldNormal  = normalize(mul(normalMatrix, input.normal));
-    output.worldTangent = normalize(mul(normalMatrix, input.tangent));
+    //Transform tangent direction by normal matrix, preserve handedness sign in w
+    output.worldTangent = float4(normalize(mul(normalMatrix, input.tangent.xyz)), input.tangent.w);
     output.uv           = input.texCoord;
     output.color        = input.color;
 
@@ -95,13 +93,11 @@ VSOutput vertMain(VSInput input)
 float4 fragMain(VSOutput input) : SV_Target
 {
     // ── Normal mapping ───────────────────────────────────────────────────────
+    float3 T = normalize(input.worldTangent.xyz);
     float3 N = normalize(input.worldNormal);
-    float3 T = normalize(input.worldTangent);
-    T = normalize(T - dot(T, N) * N);   // re-orthogonalise (Gram-Schmidt)
-    float3 B = cross(N, T);
-    float3x3 TBN = transpose(float3x3(T, B, N));   // tangent-space → world
+    float3 B = cross(N, T) * input.worldTangent.w;  // w carries handedness sign
+    float3x3 TBN = float3x3(T, B, N);
 
-    // Sample normal map, remap [0,1] → [-1,1], transform to world space
     float3 sampledNormal = texNormal.Sample(input.uv).xyz * 2.0 - 1.0;
     float3 worldN = normalize(mul(TBN, sampledNormal));
 

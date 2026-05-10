@@ -17,6 +17,7 @@ void Renderer::Init(Window& window)
     m_commandManager.Init(m_device, m_swapchain);
     m_descriptorManager.Init(m_device, m_commandManager);
     CreateDepthImage();
+    CreateMsaaImage();
     CreatePipeline();
     CreateDefaultMaterial();
 
@@ -42,12 +43,32 @@ void Renderer::CreateDepthImage()
     config.format = vk::Format::eD32Sfloat;
     config.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment;
     config.aspectMask = vk::ImageAspectFlagBits::eDepth;
-    config.samples = vk::SampleCountFlagBits::e1;
+    config.samples = m_device.GetMsaaSamples();  // must match MSAA color image
 
     m_depthImage.Init(m_device, m_commandManager, config);
     m_depthImage.TransitionLayout(m_device, m_commandManager,
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eDepthAttachmentOptimal);
+}
+
+void Renderer::CreateMsaaImage()
+{
+    ImageConfig config;
+    config.width = m_swapchain.GetExtent().width;
+    config.height = m_swapchain.GetExtent().height;
+    config.format = m_swapchain.GetSurfaceFormat().format;
+    // eTransientAttachment tells the driver this image never needs to be written
+    // to VRAM — it can live entirely in tile memory on mobile/integrated GPUs.
+    // On discrete GPUs the flag is simply ignored.
+    config.usage = vk::ImageUsageFlagBits::eColorAttachment |
+        vk::ImageUsageFlagBits::eTransientAttachment;
+    config.aspectMask = vk::ImageAspectFlagBits::eColor;
+    config.samples = m_device.GetMsaaSamples();
+
+    m_msaaImage.Init(m_device, m_commandManager, config);
+    m_msaaImage.TransitionLayout(m_device, m_commandManager,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eColorAttachmentOptimal);
 }
 
 void Renderer::CreatePipeline()
@@ -60,7 +81,7 @@ void Renderer::CreatePipeline()
     config.fragShaderPath = "shaders/shader.frag.spv";
     config.colorAttachmentFormats = { m_swapchain.GetSurfaceFormat().format };
     config.depthAttachmentFormat = vk::Format::eD32Sfloat;
-    config.msaaSamples = vk::SampleCountFlagBits::e1;
+    config.msaaSamples = m_device.GetMsaaSamples();  // pipeline must match images
     config.useVertexInput = true;
     config.vertexBinding = binding;
     config.vertexAttributes = { attrs.begin(), attrs.end() };
@@ -98,8 +119,12 @@ void Renderer::RecreateSwapchain()
 
     WaitIdle();
     m_swapchain.Recreate(m_device, m_surface, *m_window);
+
     m_depthImage.Shutdown();
+    m_msaaImage.Shutdown();
     CreateDepthImage();
+    CreateMsaaImage();
+
     m_commandManager.RecreateSyncObjects(m_device, m_swapchain);
     m_needsResize = false;
 
@@ -138,30 +163,35 @@ bool Renderer::BeginFrame(const RenderList& list)
     beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
     cmd.begin(beginInfo);
 
-    // Swapchain image → color attachment
-    vk::ImageMemoryBarrier2 barrier{};
-    barrier.image = m_swapchain.GetImages()[m_imageIndex];
-    barrier.oldLayout = vk::ImageLayout::eUndefined;
-    barrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    barrier.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
-    barrier.srcAccessMask = vk::AccessFlagBits2::eNone;
-    barrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
-    barrier.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
-    barrier.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
-    barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
-    barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
+    // Transition the swapchain image to color attachment — it will be the resolve target
+    vk::ImageMemoryBarrier2 swapBarrier{};
+    swapBarrier.image = m_swapchain.GetImages()[m_imageIndex];
+    swapBarrier.oldLayout = vk::ImageLayout::eUndefined;
+    swapBarrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    swapBarrier.srcStageMask = vk::PipelineStageFlagBits2::eTopOfPipe;
+    swapBarrier.srcAccessMask = vk::AccessFlagBits2::eNone;
+    swapBarrier.dstStageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+    swapBarrier.dstAccessMask = vk::AccessFlagBits2::eColorAttachmentWrite;
+    swapBarrier.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
+    swapBarrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+    swapBarrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
 
     vk::DependencyInfo depInfo{};
     depInfo.imageMemoryBarrierCount = 1;
-    depInfo.pImageMemoryBarriers = &barrier;
+    depInfo.pImageMemoryBarriers = &swapBarrier;
     cmd.pipelineBarrier2(depInfo);
 
+    // MSAA color attachment — we render into this multisampled image
     vk::RenderingAttachmentInfo colorAttachment{};
-    colorAttachment.imageView = *m_swapchain.GetImageViews()[m_imageIndex];
+    colorAttachment.imageView = *m_msaaImage.GetImageView();
     colorAttachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
     colorAttachment.loadOp = vk::AttachmentLoadOp::eClear;
-    colorAttachment.storeOp = vk::AttachmentStoreOp::eStore;
+    colorAttachment.storeOp = vk::AttachmentStoreOp::eDontCare;  // transient, never stored
     colorAttachment.clearValue = vk::ClearColorValue{ 0.1f, 0.1f, 0.1f, 1.0f };
+    // Resolve target: driver resolves MSAA → single-sample swapchain image at end of pass
+    colorAttachment.resolveMode = vk::ResolveModeFlagBits::eAverage;
+    colorAttachment.resolveImageView = *m_swapchain.GetImageViews()[m_imageIndex];
+    colorAttachment.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
 
     vk::RenderingAttachmentInfo depthAttachment{};
     depthAttachment.imageView = m_depthImage.GetImageView();
@@ -199,7 +229,7 @@ bool Renderer::BeginFrame(const RenderList& list)
     cmd.bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
         *m_pipeline.GetPipelineLayout(),
-        0,                      // firstSet
+        0,
         *m_descriptorManager.GetFrameSet(m_currentFrame),
         nullptr);
 
@@ -257,6 +287,7 @@ void Renderer::EndFrame()
 
     cmd.endRendering();
 
+    // After endRendering the resolve is complete. Transition swapchain image to present.
     vk::ImageMemoryBarrier2 barrier{};
     barrier.image = m_swapchain.GetImages()[m_imageIndex];
     barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
@@ -318,6 +349,7 @@ void Renderer::Shutdown()
     m_defaultMaterial->Shutdown();
     m_defaultMaterial.reset();
     m_pipeline.Shutdown();
+    m_msaaImage.Shutdown();
     m_depthImage.Shutdown();
     m_descriptorManager.Shutdown();
     m_commandManager.Shutdown();

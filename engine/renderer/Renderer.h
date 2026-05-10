@@ -47,6 +47,7 @@ private:
     CommandManager       m_commandManager;
     DescriptorManager    m_descriptorManager;
     Image                m_depthImage;
+    Image                m_msaaImage;   // multisampled color target; resolved into swapchain image
     Pipeline             m_pipeline;
 
     // Fallback material — used when a draw call has no material assigned.
@@ -55,6 +56,7 @@ private:
 
     void CreateSurface();
     void CreateDepthImage();
+    void CreateMsaaImage();
     void CreatePipeline();
     void CreateDefaultMaterial();
     void RecreateSwapchain();

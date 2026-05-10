@@ -48,6 +48,16 @@ public:
     const SceneObject& GetObject(ObjectHandle handle) const;
     bool               HasObject(ObjectHandle handle) const;
 
+    // Look up a registered material by name — returns nullptr if not found.
+    // Use with GetObject() to swap materials at runtime:
+    //   scene->GetObject(handle).material = scene->GetMaterial("damagedMat");
+    // Pass nullptr to fall back to the renderer's default white material.
+    Material* GetMaterial(const std::string& name)
+    {
+        auto it = m_materialRegistry.find(name);
+        return it == m_materialRegistry.end() ? nullptr : it->second;
+    }
+
     Camera& GetCamera() { return m_camera; }
 
     // Lighting — configure once in App::Load
