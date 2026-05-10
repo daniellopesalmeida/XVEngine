@@ -2,6 +2,7 @@
 #include <scene/Camera.h>
 #include <scene/SceneObject.h>
 #include <scene/ObjectHandle.h>
+#include <scene/Light.h>
 #include <scene/RenderList.h>
 #include <renderer/Device.h>
 #include <renderer/CommandManager.h>
@@ -24,6 +25,8 @@ public:
         DescriptorManager& descriptorManager, float aspect);
     void Shutdown();
 
+    // ── Objects ───────────────────────────────────────────────────────────────
+
     // Add an object from raw geometry (no material)
     ObjectHandle AddObject(
         const std::vector<Vertex>& vertices,
@@ -36,37 +39,48 @@ public:
         const Transform& transform = {},
         const std::string& materialName = "");
 
+    void         RemoveObject(ObjectHandle handle);
+    SceneObject& GetObject(ObjectHandle handle);
+    const SceneObject& GetObject(ObjectHandle handle) const;
+    bool               HasObject(ObjectHandle handle) const;
+
+    // ── Meshes & Materials ───────────────────────────────────────────────────
+
     // Load a mesh from an .obj file and register it under 'name'
     void LoadMesh(const std::filesystem::path& path, const std::string& name);
 
     // Load a material from a MaterialDesc and register it under 'name'
     void LoadMaterial(const std::string& name, const MaterialDesc& desc);
 
-    void RemoveObject(ObjectHandle handle);
-
-    SceneObject& GetObject(ObjectHandle handle);
-    const SceneObject& GetObject(ObjectHandle handle) const;
-    bool               HasObject(ObjectHandle handle) const;
-
     // Look up a registered material by name — returns nullptr if not found.
-    // Use with GetObject() to swap materials at runtime:
-    //   scene->GetObject(handle).material = scene->GetMaterial("damagedMat");
-    // Pass nullptr to fall back to the renderer's default white material.
+    // Pass nullptr to an object to fall back to the renderer's default white material.
     Material* GetMaterial(const std::string& name)
     {
         auto it = m_materialRegistry.find(name);
         return it == m_materialRegistry.end() ? nullptr : it->second;
     }
 
+    // ── Lights ────────────────────────────────────────────────────────────────
+
+    // Add a light to the scene — returns a handle for later mutation/removal.
+    LightHandle AddLight(const Light& light);
+
+    // Remove a light. The handle becomes invalid after this call.
+    void        RemoveLight(LightHandle handle);
+
+    // Access a live light for runtime edits (position, color, intensity, etc.)
+    // Throws if handle is invalid.
+    Light& GetLight(LightHandle handle);
+    bool        HasLight(LightHandle handle) const;
+
+    // Scene-wide ambient — not tied to any individual light source
+    glm::vec3 ambientColor = { 1.f, 1.f, 1.f };
+    float     ambientStrength = 0.15f;
+
+    // ── Camera ────────────────────────────────────────────────────────────────
     Camera& GetCamera() { return m_camera; }
 
-    // Lighting — configure once in App::Load
-    glm::vec3 lightDir = glm::vec3(0.f, -10.0f, -0.5f);
-    glm::vec3 lightColor = { 1.f, 1.f, 1.f };
-    float ambientStrength = 0.15f;
-    float specularStrength = 0.5f;
-    float shininess = 32.f;
-
+    // ── Update ────────────────────────────────────────────────────────────────
     void Update(float deltaTime);
     void FixedUpdate(float deltaTime);
 
@@ -79,6 +93,7 @@ private:
 
     Camera m_camera;
 
+    // Objects
     std::vector<SceneObject>           m_objects;
     std::vector<bool>                  m_alive;
     std::vector<std::unique_ptr<Mesh>> m_meshes;
@@ -87,7 +102,12 @@ private:
     std::vector<std::unique_ptr<Material>>     m_materials;
     std::unordered_map<std::string, Material*> m_materialRegistry;
 
-    uint32_t m_nextId = 0;
+    uint32_t m_nextObjectId = 0;
+
+    // Lights — parallel arrays, same handle-slot pattern as objects
+    std::vector<Light> m_lights;
+    std::vector<bool>  m_lightsAlive;
+    uint32_t           m_nextLightId = 0;
 
     Mesh* GetOrCreateMesh(
         const std::vector<Vertex>& vertices,

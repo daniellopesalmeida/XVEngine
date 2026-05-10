@@ -5,6 +5,7 @@
 #include <renderer/Mesh.h>
 #include <renderer/Material.h>
 #include <glm/gtc/matrix_inverse.hpp>
+#include <scene/Light.h>
 
 void Renderer::Init(Window& window)
 {
@@ -214,15 +215,28 @@ bool Renderer::BeginFrame(const RenderList& list)
     FrameData frameData{};
     frameData.view = list.view;
     frameData.proj = list.proj;
-    frameData.lightDir = glm::vec4(glm::normalize(list.lightDir), 0.f);
-    frameData.lightColor = glm::vec4(list.lightColor, 0.f);
     frameData.cameraPos = glm::vec4(list.cameraPos, 0.f);
-    frameData.lightParams = glm::vec4(
-        list.ambientStrength,
-        list.specularStrength,
-        list.shininess,
-        0.f);
-
+    frameData.ambientColorAndStrength = glm::vec4(
+        list.ambientColor,
+        list.ambientStrength);
+    uint32_t lightCount = 0;
+       for (const auto& light : list.lights)
+       {
+           if (lightCount >= MAX_LIGHTS) break;
+    
+           GpuLight& gl = frameData.lights[lightCount++];
+    
+           gl.colorAndIntensity = glm::vec4(light.color, light.intensity);
+           gl.positionAndRange  = glm::vec4(light.position, light.range);
+           gl.directionAndType  = glm::vec4(glm::normalize(light.direction),
+                                            static_cast<float>(light.type));
+    
+           // Pre-compute cosines so the shader doesn't have to
+           float cosInner = glm::cos(glm::radians(light.innerCone));
+           float cosOuter = glm::cos(glm::radians(light.outerCone));
+           gl.coneAngles  = glm::vec4(cosInner, cosOuter, 0.f, 0.f);
+       }
+       frameData.lightCount = lightCount;
     m_descriptorManager.UpdateFrameData(m_currentFrame, frameData);
 
     // Bind set 0 (frame UBO) — stays bound for the whole frame

@@ -1,6 +1,9 @@
 #pragma once
 #include <core/Engine.h>
 #include <scene/ObjectHandle.h>
+#include <scene/Light.h>
+#include <unordered_map>
+#include <string>
 
 class App
 {
@@ -14,9 +17,8 @@ public:
 private:
     Engine& m_engine;
 
-    //handles to objects
-    //ObjectHandle m_objectHandle;
     std::unordered_map<std::string, ObjectHandle> m_Objects;
+    std::unordered_map<std::string, LightHandle>  m_Lights;
 
     void loadQuad(Scene* scene);
     void loadCube(Scene* scene);

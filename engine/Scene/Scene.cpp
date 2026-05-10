@@ -4,6 +4,8 @@
 #include <utils/Logger.h>
 #include <stdexcept>
 
+// ── Init / Shutdown ───────────────────────────────────────────────────────────
+
 void Scene::Init(Device& device, CommandManager& cmdManager,
     DescriptorManager& descriptorManager, float aspect)
 {
@@ -21,6 +23,9 @@ void Scene::Shutdown()
     m_objects.clear();
     m_alive.clear();
 
+    m_lights.clear();
+    m_lightsAlive.clear();
+
     for (auto& mat : m_materials) mat->Shutdown();
     m_materials.clear();
     m_materialRegistry.clear();
@@ -31,6 +36,8 @@ void Scene::Shutdown()
 
     Logger::Info("Scene shutdown");
 }
+
+// ── Objects ───────────────────────────────────────────────────────────────────
 
 ObjectHandle Scene::AddObject(
     const std::vector<Vertex>& vertices,
@@ -46,7 +53,7 @@ ObjectHandle Scene::AddObject(
     obj.material = nullptr;
     obj.name = name;
 
-    ObjectHandle handle{ m_nextId++ };
+    ObjectHandle handle{ m_nextObjectId++ };
     m_objects.push_back(obj);
     m_alive.push_back(true);
 
@@ -77,7 +84,7 @@ ObjectHandle Scene::AddObject(const std::string& meshName,
     obj.material = mat;
     obj.name = meshName;
 
-    ObjectHandle handle{ m_nextId++ };
+    ObjectHandle handle{ m_nextObjectId++ };
     m_objects.push_back(obj);
     m_alive.push_back(true);
 
@@ -109,8 +116,12 @@ const SceneObject& Scene::GetObject(ObjectHandle handle) const
 
 bool Scene::HasObject(ObjectHandle handle) const
 {
-    return handle.IsValid() && handle.id < m_alive.size() && m_alive[handle.id];
+    return handle.IsValid()
+        && handle.id < m_alive.size()
+        && m_alive[handle.id];
 }
+
+// ── Meshes & Materials ────────────────────────────────────────────────────────
 
 void Scene::LoadMesh(const std::filesystem::path& path, const std::string& name)
 {
@@ -144,12 +155,52 @@ void Scene::LoadMaterial(const std::string& name, const MaterialDesc& desc)
     Logger::Info("Material loaded: '", name, "'");
 }
 
+// ── Lights ────────────────────────────────────────────────────────────────────
+
+LightHandle Scene::AddLight(const Light& light)
+{
+    LightHandle handle{ m_nextLightId++ };
+    m_lights.push_back(light);
+    m_lightsAlive.push_back(true);
+
+    const char* typeStr =
+        light.type == LightType::Directional ? "Directional" :
+        light.type == LightType::Point ? "Point" : "Spot";
+    Logger::Info("Light added: id=", handle.id, " type=", typeStr);
+    return handle;
+}
+
+void Scene::RemoveLight(LightHandle handle)
+{
+    if (!HasLight(handle)) return;
+    m_lightsAlive[handle.id] = false;
+    Logger::Info("Light removed: ", handle.id);
+}
+
+Light& Scene::GetLight(LightHandle handle)
+{
+    if (!HasLight(handle))
+        throw std::runtime_error("Invalid light handle");
+    return m_lights[handle.id];
+}
+
+bool Scene::HasLight(LightHandle handle) const
+{
+    return handle.IsValid()
+        && handle.id < m_lightsAlive.size()
+        && m_lightsAlive[handle.id];
+}
+
+// ── Update ────────────────────────────────────────────────────────────────────
+
 void Scene::Update(float deltaTime)
 {
     m_camera.Update(deltaTime);
 }
 
 void Scene::FixedUpdate(float deltaTime) {}
+
+// ── Render list ───────────────────────────────────────────────────────────────
 
 RenderList Scene::BuildRenderList() const
 {
@@ -158,11 +209,15 @@ RenderList Scene::BuildRenderList() const
     list.proj = m_camera.GetProj();
     list.cameraPos = m_camera.GetPosition();
 
-    list.lightDir = lightDir;
-    list.lightColor = lightColor;
+    list.ambientColor = ambientColor;
     list.ambientStrength = ambientStrength;
-    list.specularStrength = specularStrength;
-    list.shininess = shininess;
+
+    // Copy only alive lights (capped at MAX_LIGHTS — renderer will also enforce this)
+    for (uint32_t i = 0; i < m_lights.size(); i++)
+    {
+        if (m_lightsAlive[i])
+            list.Add(m_lights[i]);
+    }
 
     for (uint32_t i = 0; i < m_objects.size(); i++)
     {
@@ -179,6 +234,8 @@ RenderList Scene::BuildRenderList() const
 
     return list;
 }
+
+// ── Private helpers ───────────────────────────────────────────────────────────
 
 Mesh* Scene::GetOrCreateMesh(
     const std::vector<Vertex>& vertices,

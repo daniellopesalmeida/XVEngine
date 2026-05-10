@@ -1,5 +1,6 @@
 #pragma once
 #include <glm/glm.hpp>
+#include <scene/Light.h>
 #include <vector>
 
 struct DrawCall
@@ -11,20 +12,27 @@ struct DrawCall
 
 struct RenderList
 {
-    // Camera — filled by Scene::BuildRenderList
+    // ── Camera — filled by Scene::BuildRenderList ─────────────────────────────
     glm::mat4 view;
     glm::mat4 proj;
     glm::vec3 cameraPos;
 
-    // Directional light — set by App before BuildRenderList
-    glm::vec3 lightDir = glm::normalize(glm::vec3(0.f, -1.f, -0.5f));
-    glm::vec3 lightColor = { 1.f, 1.f, 1.f };
-    float ambientStrength = 0.15f;
-    float specularStrength = 0.5f;
-    float shininess = 32.f;
+    // ── Ambient — scene-wide, not per-light ──────────────────────────────────
+    glm::vec3 ambientColor = { 1.f, 1.f, 1.f };
+    float     ambientStrength = 0.15f;
 
+    // ── Lights — copied from Scene::m_lights each frame ──────────────────────
+    std::vector<Light> lights;
+
+    // ── Draw calls ───────────────────────────────────────────────────────────
     std::vector<DrawCall> drawCalls;
 
-    void Clear() { drawCalls.clear(); }
+    void Clear()
+    {
+        drawCalls.clear();
+        lights.clear();
+    }
+
     void Add(const DrawCall& dc) { drawCalls.push_back(dc); }
+    void Add(const Light& light) { lights.push_back(light); }
 };

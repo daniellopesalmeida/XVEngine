@@ -2,6 +2,7 @@
 #include <renderer/Vertex.h>
 #include <renderer/Material.h>
 #include <core/Transform.h>
+#include <scene/Light.h>
 #include <utils/Logger.h>
 #include <glm/glm.hpp>
 
@@ -17,16 +18,21 @@ void App::Load()
     auto& sm = m_engine.GetSceneManager();
     auto* scene = sm.AddScene("render scene");
 
-    // ── Lighting ────────────────────────────────────────────────────────────
-    scene->lightDir = glm::normalize(glm::vec3(0.5f, 1.f, 0.5f));
-    scene->lightColor = { 1.f, 0.98f, 0.9f };
+    // ── Ambient ──────────────────────────────────────────────────────────────
+    scene->ambientColor = { 1.f, 1.f, 1.f };
     scene->ambientStrength = 0.55f;
-    scene->specularStrength = 0.4f;
-    scene->shininess = 32.f;
+
+    // ── Lights ───────────────────────────────────────────────────────────────
+    scene->AddLight(Light{
+        .type = LightType::Directional,
+        .color = { 1.f, 0.98f, 0.9f },
+        .intensity = 1.f,
+        .direction = glm::normalize(glm::vec3(0.5f, 1.f, 0.5f)),
+        });
 
     // ── Geometry + Materials ─────────────────────────────────────────────────
     loadObj(scene);
-    //loadGround(scene);
+    loadGround(scene);
     //loadCube(scene);
 
     sm.LoadScene("render scene");
@@ -41,7 +47,7 @@ void App::Update(float deltaTime)
     for (auto& [name, handle] : m_Objects)
     {
         auto& obj = scene->GetObject(handle);
-        //obj.transform.rotation.y += 45.f * deltaTime;
+        obj.transform.rotation.y += 45.f * deltaTime;
         //Logger::Info("rotation.y = ", obj.transform.rotation.y);
     }
 }
@@ -55,7 +61,7 @@ void App::loadObj(Scene* scene)
 {
     // Load meshes
     scene->LoadMesh("models/vehicle.obj", "vehicle");
-    scene->LoadMesh("models/fireFX.obj", "fire");
+    //scene->LoadMesh("models/fireFX.obj", "fire");
 
     // Load materials — provide paths to each texture slot.
     // Leave a slot empty ("") to use the built-in fallback texture.
@@ -66,19 +72,19 @@ void App::loadObj(Scene* scene)
         .normal = "textures/vehicle_normal.png",
         });
 
-    scene->LoadMaterial("fireMat", MaterialDesc{
-        .diffuse = "textures/fireFX_diffuse.png",
-        // no specular / gloss / normal — fallbacks used automatically
-        });
+    //scene->LoadMaterial("fireMat", MaterialDesc{
+    //    .diffuse = "textures/fireFX_diffuse.png",
+    //    // no specular / gloss / normal — fallbacks used automatically
+    //    });
 
     // Add objects — mesh name + transform + material name
     m_Objects["vehicle"] = scene->AddObject("vehicle",
         Transform{ .position = { 0.f, 0.f, -50.f } },
         "vehicleMat");
 
-    m_Objects["fire"] = scene->AddObject("fire",
-        Transform{ .position = { 0.f, 0.f, -50.f } },
-        "fireMat");
+    //m_Objects["fire"] = scene->AddObject("fire",
+    //    Transform{ .position = { 0.f, 0.f, -50.f } },
+    //    "fireMat");
 }
 
 void App::loadCube(Scene* scene)
@@ -159,7 +165,6 @@ void App::loadGround(Scene* scene)
 
     const std::vector<Vertex> verts =
     {
-        // positions                     // color      // normal   // uv    // tangent (w=handedness)
         {{-size, -10.f, -size}, {1,1,1}, {0,1,0}, {0,0}, {1,0,0,1}},
         {{ size, -10.f, -size}, {1,1,1}, {0,1,0}, {1,0}, {1,0,0,1}},
         {{ size, -10.f,  size}, {1,1,1}, {0,1,0}, {1,1}, {1,0,0,1}},
